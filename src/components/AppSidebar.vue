@@ -1,0 +1,164 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useAppStore } from '@/stores/app'
+import { useDevicesStore } from '@/stores/devices'
+import type { Device } from '@/types'
+
+const appStore = useAppStore()
+const devicesStore = useDevicesStore()
+
+const emit = defineEmits<{
+  selectDevice: [device: Device]
+  addDevice: []
+}>()
+
+function handleDeviceClick(device: Device) {
+  if (!devicesStore.currentDevice) {
+    emit('selectDevice', device)
+  } else if (devicesStore.currentDevice.id !== device.id) {
+    emit('selectDevice', device)
+  }
+}
+
+function handleAddDevice() {
+  emit('addDevice')
+}
+
+/** 统一设备状态：当前设备跟随 appStore.connection，其他设备跟随 device.online */
+function getDeviceStatus(device: Device): { text: string; cls: string } {
+  const isCurrent = devicesStore.currentDevice?.id === device.id
+  if (isCurrent) {
+    if (appStore.connection === 'connected') return { text: '● 已连接', cls: '' }
+    if (appStore.connection === 'connecting') return { text: '● 连接中...', cls: '' }
+    if (appStore.connection === 'error') return { text: '● 连接错误', cls: 'offline' }
+  }
+  return device.online ? { text: '● 在线', cls: '' } : { text: '● 离线', cls: 'offline' }
+}
+</script>
+
+<template>
+  <aside class="sidebar" :class="{ collapsed: appStore.sidebarCollapsed }">
+    <div class="sidebar-content">
+      <div class="device-section">
+        <h3 class="section-title">设备列表</h3>
+        <div class="device-list">
+          <div
+            v-for="device in devicesStore.devices"
+            :key="device.id"
+            class="device-card"
+            :class="{ active: devicesStore.currentDevice?.id === device.id }"
+            @click="handleDeviceClick(device)"
+          >
+            <div class="device-card-header">
+              <span class="device-name">{{ device.name }}</span>
+              <span class="device-badge" v-if="devicesStore.currentDevice?.id === device.id">当前设备</span>
+            </div>
+            <div class="device-ip">{{ device.ip }}:{{ device.port }}</div>
+            <div class="device-status-line" :class="getDeviceStatus(device).cls">
+              {{ getDeviceStatus(device).text }}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="discover-section">
+        <h3 class="section-title">发现设备</h3>
+        <div v-if="appStore.scanning" class="scan-indicator">
+          <span class="spinner"></span> 扫描中...
+        </div>
+        <div class="device-list">
+          <div
+            v-for="device in devicesStore.discovered"
+            :key="device.id"
+            class="device-card"
+            :class="{ active: devicesStore.currentDevice?.id === device.id }"
+            @click="handleDeviceClick(device)"
+          >
+            <div class="device-card-header">
+              <span class="device-name">{{ device.name }}</span>
+              <span class="device-badge" v-if="devicesStore.currentDevice?.id === device.id">当前设备</span>
+            </div>
+            <div class="device-ip">{{ device.ip }}:{{ device.port }}</div>
+            <div class="device-status-line" :class="getDeviceStatus(device).cls">
+              {{ getDeviceStatus(device).text }}
+            </div>
+          </div>
+          <div v-if="!appStore.scanning && devicesStore.discovered.length === 0" class="empty-state" style="padding: 16px; font-size:12px;">
+            暂无发现设备
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <button class="add-device-btn" @click="handleAddDevice">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        新增机器人
+      </button>
+    </div>
+  </aside>
+
+  <button
+    class="add-device-float-btn"
+    :style="{ display: appStore.sidebarCollapsed ? 'flex' : 'none' }"
+    title="新增机器人"
+    @click="handleAddDevice"
+  >
+    <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+  </button>
+</template>
+
+<style scoped>
+.sidebar {
+  width: 260px; min-width: 260px; flex-shrink: 0; height: 100%;
+  background: var(--bg-secondary); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; transition: width 0.2s;
+}
+.sidebar.collapsed { width: 0; min-width: 0; overflow: hidden; padding: 0; }
+.sidebar-content { flex: 1; overflow-y: auto; padding: 16px; }
+.section-title {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px;
+}
+.device-section, .discover-section { margin-bottom: 24px; }
+.device-card {
+  padding: 12px; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); margin-bottom: 8px; cursor: pointer; transition: all 0.15s;
+}
+.device-card:hover { border-color: var(--accent); }
+.device-card.active { border-color: var(--accent); background: rgba(0, 212, 255, 0.08); }
+.device-card-header { display: flex; justify-content: space-between; align-items: center; }
+.device-name { font-weight: 600; font-size: 13px; }
+.device-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: var(--radius-sm);
+  background: rgba(0, 212, 255, 0.2); color: var(--accent);
+}
+.device-ip { font-size: 11px; color: var(--text-muted); font-family: monospace; margin-top: 2px; }
+.device-status-line { font-size: 11px; margin-top: 4px; color: var(--success); }
+.device-status-line.offline { color: var(--danger); }
+.scan-indicator {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px; color: var(--text-muted); font-size: 12px;
+}
+.spinner {
+  width: 14px; height: 14px; border: 2px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.sidebar-footer { padding: 16px; border-top: 1px solid var(--border); }
+.add-device-btn {
+  width: 100%; padding: 10px; border: 1px dashed var(--border-light); border-radius: var(--radius-md);
+  background: transparent; color: var(--text-secondary); font-size: 13px;
+  display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+}
+.add-device-btn:hover { border-color: var(--accent); color: var(--accent); }
+.add-device-float-btn {
+  position: fixed; bottom: 40px; left: 20px; z-index: 150;
+  width: 48px; height: 48px; border-radius: 50%; border: none;
+  background: var(--accent); color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  transition: transform 0.2s;
+}
+.add-device-float-btn:hover { transform: scale(1.1); }
+.empty-state { text-align: center; padding: 48px; color: var(--text-muted); }
+</style>
