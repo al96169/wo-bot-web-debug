@@ -366,6 +366,7 @@ export function useWebSocket() {
   function sendGimbalMoveBegin(panSpeed: number, tiltSpeed: number): void { _send({ type: 'gimbal', data: { action: 'move_begin', pan_speed: panSpeed, tilt_speed: tiltSpeed } }) }
   function sendGimbalMoveUpdate(panSpeed: number, tiltSpeed: number): void { _send({ type: 'gimbal', data: { action: 'move_update', pan_speed: panSpeed, tilt_speed: tiltSpeed } }) }
   function sendGimbalMoveEnd(): void { _send({ type: 'gimbal', data: { action: 'move_end' } }) }
+  function sendGimbalCenter(): void { _send({ type: 'gimbal', data: { action: 'center' } }) }
   function requestSoftwareList(): void { _send({ type: 'software_list', data: {} }) }
   function requestSoftwareSearch(keyword: string): void { _send({ type: 'software_search', data: { keyword } }) }
   function requestModuleList(): void { _send({ type: 'module_list', data: {} }) }
@@ -382,7 +383,7 @@ export function useWebSocket() {
     connect, disconnect, send: _send, cleanup,
     sendMotion, sendMotionStop, sendEmergencyStop, sendSystemAction, sendExec, sendCamera,
     requestCameraStatus, sendGimbal, sendGimbalMove,
-    sendGimbalMoveBegin, sendGimbalMoveUpdate, sendGimbalMoveEnd,
+    sendGimbalMoveBegin, sendGimbalMoveUpdate, sendGimbalMoveEnd, sendGimbalCenter,
     requestSoftwareList, requestSoftwareSearch, requestModuleList, sendDeviceControl, sendSoftwareAction,
     sendWifiScan, sendWifiConnect, sendWifiDisconnect,
   }

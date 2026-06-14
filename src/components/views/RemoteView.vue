@@ -7,7 +7,7 @@ import { useWebRTC } from '@/composables/useWebRTC'
 
 const appStore = useAppStore()
 const robotStore = useRobotStore()
-const { sendMotion, sendMotionStop, sendEmergencyStop, sendCamera, sendGimbal, sendGimbalMove, sendGimbalMoveBegin, sendGimbalMoveUpdate, sendGimbalMoveEnd, requestCameraStatus } = useWebSocket()
+const { sendMotion, sendMotionStop, sendEmergencyStop, sendCamera, sendGimbal, sendGimbalMove, sendGimbalMoveBegin, sendGimbalMoveUpdate, sendGimbalMoveEnd, sendGimbalCenter, requestCameraStatus } = useWebSocket()
 const { videoStream0, videoStream1, reconnect: reconnectWebRTC } = useWebRTC()
 
 // 云台功能是否可用（服务端 features 包含 "gimbal"）
@@ -367,7 +367,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
               :class="{ active: appStore.toggleStates.flashlight }"
               @click="handleAction('flashlight')"
             >🔦 手电</button>
+            <button
+              v-if="gimbalAvailable"
+              class="action-btn center"
+              @click="sendGimbalCenter()"
+            >🎯 回中</button>
             <button class="action-btn danger" @click="handleAction('emergency')">🛑 急停</button>
+          </div>
+          <div v-if="gimbalAvailable" class="gimbal-status">
+            <span class="gimbal-angle">水平: {{ robotStore.gimbal.pan }}°</span>
+            <span class="gimbal-angle">俯仰: {{ robotStore.gimbal.tilt }}°</span>
           </div>
           <div class="keyboard-hint">
             <small>W=前进 S=后退 A=左移 D=右移 QE=偏航 RF=左云台 ZX=右云台 空格=急停</small>
@@ -425,14 +434,21 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
   color: var(--text-primary); padding: 6px 12px; border-radius: var(--radius-md); font-size: 13px;
 }
 .keyboard-toggle { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
-.quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }
+.quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 8px; width: 100%; }
 .action-btn {
   padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-md);
   background: var(--bg-card); color: var(--text-primary); font-size: 12px; cursor: pointer; transition: all 0.15s;
 }
 .action-btn:hover { background: var(--bg-hover); border-color: var(--accent); }
 .action-btn.toggle.active { background: var(--accent); border-color: var(--accent); color: var(--bg-primary); }
+.action-btn.center { background: var(--bg-card); border-color: var(--accent); color: var(--accent); }
+.action-btn.center:hover { background: var(--accent); color: var(--bg-primary); }
 .action-btn.danger { background: var(--danger); border-color: var(--danger); color: white; }
 .action-btn.danger:hover { background: #ff3344; }
+.gimbal-status {
+  display: flex; gap: 16px; justify-content: center;
+  font-size: 12px; color: var(--text-secondary);
+}
+.gimbal-angle { font-variant-numeric: tabular-nums; }
 .keyboard-hint { font-size: 11px; color: var(--text-muted); }
 </style>
