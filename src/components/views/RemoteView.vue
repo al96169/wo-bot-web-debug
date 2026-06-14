@@ -2,19 +2,21 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useRobotStore } from '@/stores/robot'
-import { useWebSocket } from '@/composables/useWebSocket'
+import { useWebSocket, getRemoteFeatures } from '@/composables/useWebSocket'
 import { useWebRTC } from '@/composables/useWebRTC'
 
 const appStore = useAppStore()
 const robotStore = useRobotStore()
-const { sendMotion, sendMotionStop, sendEmergencyStop, sendCamera, sendGimbal, requestCameraStatus } = useWebSocket()
-const { videoStream0, videoStream1 } = useWebRTC()
+const { sendMotion, sendMotionStop, sendEmergencyStop, sendCamera, sendGimbal, sendGimbalMove, requestCameraStatus } = useWebSocket()
+const { videoStream0, videoStream1, reconnect: reconnectWebRTC } = useWebRTC()
+
+// 云台功能是否可用（服务端 features 包含 "gimbal"）
+const gimbalAvailable = computed(() => getRemoteFeatures().includes('gimbal'))
 
 // Refs
 const joystickMoveRef = ref<HTMLCanvasElement | null>(null)
 const joystickCamLeftRef = ref<HTMLCanvasElement | null>(null)
 const joystickYawRef = ref<HTMLCanvasElement | null>(null)
-const joystickCamRightRef = ref<HTMLCanvasElement | null>(null)
 const videoLeftRef = ref<HTMLVideoElement | null>(null)
 const videoRightRef = ref<HTMLVideoElement | null>(null)
 
@@ -25,17 +27,19 @@ const leftCameraId = computed(() => robotStore.cameras.length > 0 ? 0 : null)
 const rightCameraId = computed(() => robotStore.cameras.length > 1 ? 1 : null)
 
 // 绑定 WebRTC 视频流到 <video> 元素（双摄像头独立流）
-// 同时监听 stream 和 cameraOn 状态，解决 DOM 挂载时序问题
-watch([videoStream0, cameraLeftOn], ([stream]) => {
+// 视频元素始终在 DOM 中（通过 CSS 显隐），避免 v-if 销毁重建导致 ref 时序问题
+watch(videoStream0, (stream) => {
   if (stream && videoLeftRef.value) {
     videoLeftRef.value.srcObject = stream
+    videoLeftRef.value.play().catch(() => {})
   }
-}, { flush: 'post' })
-watch([videoStream1, cameraRightOn], ([stream]) => {
+}, { immediate: true, flush: 'post' })
+watch(videoStream1, (stream) => {
   if (stream && videoRightRef.value) {
     videoRightRef.value.srcObject = stream
+    videoRightRef.value.play().catch(() => {})
   }
-}, { flush: 'post' })
+}, { immediate: true, flush: 'post' })
 
 // Joystick state
 interface JoystickState {
@@ -128,10 +132,9 @@ function setupJoystick(canvasRef: HTMLCanvasElement, key: string) {
     state.x = clamped.x; state.y = clamped.y
     drawJoystick(canvas, state)
 
-    // 云台摇杆：开始持续发送
+    // 云台摇杆：增量模式 - 根据摇杆位置计算方向增量
     if (key === 'camLeft' || key === 'camRight') {
-      sendGimbalPosition(clamped)
-      moveTimer = setInterval(() => sendGimbalPosition({ x: state.x, y: state.y }), 100)
+      moveTimer = setInterval(() => sendGimbalDelta(state), 100)
     }
   }
 
@@ -160,7 +163,20 @@ function setupJoystick(canvasRef: HTMLCanvasElement, key: string) {
     if (moveTimer) { clearInterval(moveTimer); moveTimer = null }
   }
 
-  function sendGimbalPosition(pos: { x: number; y: number }) {
+  function sendGimbalDelta(js: JoystickState) {
+    // 增量模式: 摇杆偏移量 → delta值 (-1.0 ~ +1.0)
+    // 摇杆中心=0, 上/右=+1, 下/左=-1
+    const tiltDelta = -((js.y - cy) / (cy - knobR))  // 上=正(抬头)
+    const panDelta = (js.x - cx) / (cx - knobR)       // 右=正(右转)
+    // 死区
+    const deadzone = 0.05
+    const p = Math.abs(panDelta) < deadzone ? 0 : panDelta
+    const t = Math.abs(tiltDelta) < deadzone ? 0 : tiltDelta
+    if (p === 0 && t === 0) return
+    sendGimbalMove(Math.round(p * 100) / 100, Math.round(t * 100) / 100)
+  }
+
+  function sendGimbalAbsolute(pos: { x: number; y: number }) {
     // x=左右=pan(水平), y=上下=tilt(俯仰)
     // 摇杆中心=90°, 向上减少tilt(抬头), 向下增加tilt(低头)
     // 向左减少pan, 向右增加pan
@@ -188,7 +204,12 @@ function toggleLeftCamera() {
   cameraLeftOn.value = !cameraLeftOn.value
   const action = cameraLeftOn.value ? 'start' : 'stop'
   robotStore.addCmdLog({ time: textTime(), direction: 'send', type: 'camera', data: `左摄像头(${camId}) → ${action}` })
-  sendCamera(action, camId)
+  // 开启时先重建 WebRTC 连接（新 ontrack → 新 MediaStream），再发 start 命令
+  if (cameraLeftOn.value) {
+    reconnectWebRTC().then(() => sendCamera(action, camId))
+  } else {
+    sendCamera(action, camId)
+  }
 }
 
 function toggleRightCamera() {
@@ -197,7 +218,11 @@ function toggleRightCamera() {
   cameraRightOn.value = !cameraRightOn.value
   const action = cameraRightOn.value ? 'start' : 'stop'
   robotStore.addCmdLog({ time: textTime(), direction: 'send', type: 'camera', data: `右摄像头(${camId}) → ${action}` })
-  sendCamera(action, camId)
+  if (cameraRightOn.value) {
+    reconnectWebRTC().then(() => sendCamera(action, camId))
+  } else {
+    sendCamera(action, camId)
+  }
 }
 
 // ==================== 键盘 ====================
@@ -226,9 +251,10 @@ onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
   // 绑定所有摇杆
   if (joystickMoveRef.value) setupJoystick(joystickMoveRef.value, 'move')
-  if (joystickCamLeftRef.value) setupJoystick(joystickCamLeftRef.value, 'camLeft')
+  // 云台仅在服务端支持时绑定左摇杆，右侧摇杆保持不可用
+  if (joystickCamLeftRef.value && gimbalAvailable.value) setupJoystick(joystickCamLeftRef.value, 'camLeft')
   if (joystickYawRef.value) setupJoystick(joystickYawRef.value, 'yaw')
-  if (joystickCamRightRef.value) setupJoystick(joystickCamRightRef.value, 'camRight')
+  // 右云台摇杆不绑定，保持不可用
   // 延迟等待 WebSocket 连接就绪后请求摄像头列表
   setTimeout(() => requestCameraStatus(), 1000)
 })
@@ -246,16 +272,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
           <div class="camera-dual-item">
             <div class="camera-dual-container" :class="{ disabled: !cameraLeftOn }">
               <video
-                v-if="cameraLeftOn && videoStream0"
                 ref="videoLeftRef"
                 class="camera-feed"
+                :class="{ hidden: !cameraLeftOn || !videoStream0 }"
                 autoplay playsinline muted
               ></video>
-              <div class="camera-placeholder" v-else-if="!cameraLeftOn">
+              <div class="camera-placeholder" v-if="!cameraLeftOn">
                 <p>📷 {{ robotStore.cameras[0]?.name || '左摄像头' }}</p>
                 <p class="hint">点击开启摄像头</p>
               </div>
-              <div class="camera-placeholder" v-else>
+              <div class="camera-placeholder" v-else-if="!videoStream0">
                 <p>📷 {{ robotStore.cameras[0]?.name || '左摄像头' }}</p>
                 <p class="hint" style="color: var(--success);">等待视频流...</p>
               </div>
@@ -271,12 +297,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
           <div class="camera-dual-item">
             <div class="camera-dual-container" :class="{ disabled: !cameraRightOn }">
               <video
-                v-if="cameraRightOn && videoStream1"
                 ref="videoRightRef"
                 class="camera-feed"
+                :class="{ hidden: !cameraRightOn || !videoStream1 }"
                 autoplay playsinline muted
               ></video>
-              <div class="camera-placeholder" v-else-if="rightCameraId === null">
+              <div class="camera-placeholder" v-if="rightCameraId === null">
                 <p>📷 右摄像头</p>
                 <p class="hint">未检测到摄像头</p>
               </div>
@@ -284,7 +310,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
                 <p>📷 {{ robotStore.cameras[1]?.name || '右摄像头' }}</p>
                 <p class="hint">点击开启摄像头</p>
               </div>
-              <div class="camera-placeholder" v-else>
+              <div class="camera-placeholder" v-else-if="!videoStream1">
                 <p>📷 {{ robotStore.cameras[1]?.name || '右摄像头' }}</p>
                 <p class="hint" style="color: var(--success);">等待视频流...</p>
               </div>
@@ -313,10 +339,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
                 <canvas ref="joystickMoveRef" class="joystick-canvas" width="140" height="140"></canvas>
                 <span class="joystick-hint">W/A/S/D</span>
               </div>
-              <div class="joystick-wrapper">
+              <div class="joystick-wrapper" :class="{ disabled: !gimbalAvailable }">
                 <span class="joystick-label">左云台</span>
                 <canvas ref="joystickCamLeftRef" class="joystick-canvas" width="140" height="140"></canvas>
                 <span class="joystick-hint">R/F</span>
+                <span v-if="!gimbalAvailable" class="joystick-disabled-label">不可用</span>
               </div>
             </div>
             <div class="joystick-group">
@@ -325,10 +352,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
                 <canvas ref="joystickYawRef" class="joystick-canvas" width="140" height="140"></canvas>
                 <span class="joystick-hint">Q/E</span>
               </div>
-              <div class="joystick-wrapper">
+              <div class="joystick-wrapper disabled">
                 <span class="joystick-label">右云台</span>
-                <canvas ref="joystickCamRightRef" class="joystick-canvas" width="140" height="140"></canvas>
+                <canvas class="joystick-canvas" width="140" height="140"></canvas>
                 <span class="joystick-hint">Z/X</span>
+                <span class="joystick-disabled-label">不可用</span>
               </div>
             </div>
           </div>
@@ -365,8 +393,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 .camera-dual-container.disabled { opacity: 0.5; }
 .camera-dual-container.disabled .camera-placeholder { color: var(--text-muted); }
 .camera-placeholder { text-align: center; color: var(--text-muted); }
+.camera-feed { width: 100%; height: 100%; object-fit: cover; }
+.camera-feed.hidden { display: none; }
 .camera-placeholder .hint { font-size: 12px; margin-top: 8px; }
-.camera-feed { width: 100%; height: 100%; object-fit: contain; }
 .camera-controls { display: flex; gap: 8px; }
 .camera-controls button {
   flex: 1; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-md);
@@ -387,6 +416,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
   touch-action: none;
 }
 .joystick-canvas:active { border-color: var(--accent); }
+.joystick-wrapper.disabled { opacity: 0.35; pointer-events: none; }
+.joystick-disabled-label { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
 .control-section { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px; }
 .control-mode-selector { display: flex; align-items: center; gap: 12px; width: 100%; flex-wrap: wrap; }
 .control-mode-selector select {

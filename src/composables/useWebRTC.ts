@@ -322,5 +322,19 @@ export function useWebRTC() {
     robotStore.addLog('info', 'WebRTC', 'WebRTC 连接已关闭')
   }
 
-  return { pc, dc, videoStream0, videoStream1, webrtcState, establishConnection, close }
+  /** 重连 — 关闭旧连接并立即建立新连接（摄像头启停后刷新视频轨） */
+  let _reconnecting = false
+  async function reconnect(): Promise<void> {
+    if (_reconnecting) return
+    _reconnecting = true
+    try {
+      close()
+      await new Promise(r => setTimeout(r, 300))
+      await establishConnection()
+    } finally {
+      _reconnecting = false
+    }
+  }
+
+  return { pc, dc, videoStream0, videoStream1, webrtcState, establishConnection, close, reconnect }
 }

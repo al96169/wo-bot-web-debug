@@ -281,7 +281,21 @@ export function useWebSocket() {
         robotStore.addLog('info', 'Software', `${data.package} → ${data.status}`)
         break
       case 'gimbal_status':
-        robotStore.addLog('info', 'Gimbal', `云台状态: ${JSON.stringify(data).slice(0, 100)}`)
+        robotStore.setGimbal(
+          typeof data.pan === 'number' ? data.pan : 90,
+          typeof data.tilt === 'number' ? data.tilt : 90,
+        )
+        robotStore.addLog('info', 'Gimbal', `云台 pan=${data.pan}° tilt=${data.tilt}°`)
+        break
+      case 'gimbal_limit':
+        robotStore.setGimbal(
+          typeof data.pan === 'number' ? data.pan : 90,
+          typeof data.tilt === 'number' ? data.tilt : 90,
+        )
+        const limitAxis = (data.limit_axis || data.axis || 'pan') === 'pan' ? '水平' : '俯仰'
+        const limitDir = (data.limit || 'min') === 'max' ? '最大' : '最小'
+        appStore.showToast(`云台${limitAxis}已到达${limitDir}限位`, 'info')
+        robotStore.addLog('warn', 'Gimbal', `限位: ${limitAxis} ${limitDir}`)
         break
       case 'camera_status': {
         if (Array.isArray((data as Record<string, unknown>).cameras)) {
@@ -348,6 +362,7 @@ export function useWebSocket() {
   function sendCamera(action: string, cameraId = 0): void { _send({ type: 'camera', data: { action, camera_id: cameraId } }) }
   function requestCameraStatus(): void { _send({ type: 'camera', data: { action: 'list' } }) }
   function sendGimbal(axis: string, angle: number): void { _send({ type: 'gimbal', data: { axis, angle } }) }
+  function sendGimbalMove(panDelta: number, tiltDelta: number, step: number = 3.0): void { _send({ type: 'gimbal', data: { action: 'move', pan_delta: panDelta, tilt_delta: tiltDelta, step } }) }
   function requestSoftwareList(): void { _send({ type: 'software_list', data: {} }) }
   function requestSoftwareSearch(keyword: string): void { _send({ type: 'software_search', data: { keyword } }) }
   function requestModuleList(): void { _send({ type: 'module_list', data: {} }) }
@@ -363,7 +378,7 @@ export function useWebSocket() {
     ws, reconnectCount, lastMessage,
     connect, disconnect, send: _send, cleanup,
     sendMotion, sendMotionStop, sendEmergencyStop, sendSystemAction, sendExec, sendCamera,
-    requestCameraStatus, sendGimbal,
+    requestCameraStatus, sendGimbal, sendGimbalMove,
     requestSoftwareList, requestSoftwareSearch, requestModuleList, sendDeviceControl, sendSoftwareAction,
     sendWifiScan, sendWifiConnect, sendWifiDisconnect,
   }
