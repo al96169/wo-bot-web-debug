@@ -7,7 +7,7 @@ import { useWebRTC } from '@/composables/useWebRTC'
 
 const appStore = useAppStore()
 const robotStore = useRobotStore()
-const { sendMotion, sendMotionStop, sendEmergencyStop, sendCamera, sendGimbal, sendGimbalMove, requestCameraStatus } = useWebSocket()
+const { sendMotion, sendMotionStop, sendEmergencyStop, sendCamera, sendGimbal, sendGimbalMove, sendGimbalMoveBegin, sendGimbalMoveUpdate, sendGimbalMoveEnd, requestCameraStatus } = useWebSocket()
 const { videoStream0, videoStream1, reconnect: reconnectWebRTC } = useWebRTC()
 
 // 云台功能是否可用（服务端 features 包含 "gimbal"）
@@ -122,8 +122,21 @@ function clampJoystick(pos: { x: number; y: number }) {
 function setupJoystick(canvasRef: HTMLCanvasElement, key: string) {
   const canvas = canvasRef
   const state = joystickStates[key]
-  let lastPan = 90, lastTilt = 90
-  let moveTimer: ReturnType<typeof setInterval> | null = null
+  let updateTimer: ReturnType<typeof setInterval> | null = null
+
+  function gimbalSpeedFromState(): { pan: number; tilt: number } {
+    // 摇杆偏移 → 速度 (-1.0 ~ +1.0), 中心=0, 上/右=正
+    // sqrt 曲线: 中心附近依然有区分度但不至于过慢，边缘更快
+    const rawTilt = -((state.y - cy) / (cy - knobR))
+    const rawPan = (state.x - cx) / (cx - knobR)
+    const deadzone = 0.05
+    const p = Math.abs(rawPan) < deadzone ? 0 : Math.sign(rawPan) * Math.sqrt(Math.abs(rawPan))
+    const t = Math.abs(rawTilt) < deadzone ? 0 : Math.sign(rawTilt) * Math.sqrt(Math.abs(rawTilt))
+    return {
+      pan: Math.round(p * 1000) / 1000,
+      tilt: Math.round(t * 1000) / 1000,
+    }
+  }
 
   function onStart(e: MouseEvent | Touch) {
     state.dragging = true
@@ -132,9 +145,15 @@ function setupJoystick(canvasRef: HTMLCanvasElement, key: string) {
     state.x = clamped.x; state.y = clamped.y
     drawJoystick(canvas, state)
 
-    // 云台摇杆：增量模式 - 根据摇杆位置计算方向增量
     if (key === 'camLeft' || key === 'camRight') {
-      moveTimer = setInterval(() => sendGimbalDelta(state), 100)
+      // 速度控制: begin → 服务端启动持续移动循环
+      const spd = gimbalSpeedFromState()
+      sendGimbalMoveBegin(spd.pan, spd.tilt)
+      // 50ms 定时更新速度（摇杆位置变化时通过 update 同步）
+      updateTimer = setInterval(() => {
+        const cur = gimbalSpeedFromState()
+        sendGimbalMoveUpdate(cur.pan, cur.tilt)
+      }, 50)
     }
   }
 
@@ -160,30 +179,11 @@ function setupJoystick(canvasRef: HTMLCanvasElement, key: string) {
     if (key === 'move' || key === 'yaw') {
       sendMotionStop()
     }
-    if (moveTimer) { clearInterval(moveTimer); moveTimer = null }
-  }
-
-  function sendGimbalDelta(js: JoystickState) {
-    // 增量模式: 摇杆偏移量 → delta值 (-1.0 ~ +1.0)
-    // 摇杆中心=0, 上/右=+1, 下/左=-1
-    const tiltDelta = -((js.y - cy) / (cy - knobR))  // 上=正(抬头)
-    const panDelta = (js.x - cx) / (cx - knobR)       // 右=正(右转)
-    // 死区
-    const deadzone = 0.05
-    const p = Math.abs(panDelta) < deadzone ? 0 : panDelta
-    const t = Math.abs(tiltDelta) < deadzone ? 0 : tiltDelta
-    if (p === 0 && t === 0) return
-    sendGimbalMove(Math.round(p * 100) / 100, Math.round(t * 100) / 100)
-  }
-
-  function sendGimbalAbsolute(pos: { x: number; y: number }) {
-    // x=左右=pan(水平), y=上下=tilt(俯仰)
-    // 摇杆中心=90°, 向上减少tilt(抬头), 向下增加tilt(低头)
-    // 向左减少pan, 向右增加pan
-    const tilt = Math.round(90 - ((pos.y - cy) / (cy - knobR)) * 90)
-    const pan = Math.round(90 + ((pos.x - cx) / (cx - knobR)) * 90)
-    if (pan !== lastPan) { sendGimbal('pan', pan); lastPan = pan }
-    if (tilt !== lastTilt) { sendGimbal('tilt', tilt); lastTilt = tilt }
+    if (updateTimer) { clearInterval(updateTimer); updateTimer = null }
+    // 速度控制: end → 服务端停止移动循环
+    if (key === 'camLeft' || key === 'camRight') {
+      sendGimbalMoveEnd()
+    }
   }
 
   canvas.addEventListener('mousedown', (e: MouseEvent) => onStart(e))
