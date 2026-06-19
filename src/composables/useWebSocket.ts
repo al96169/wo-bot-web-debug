@@ -382,7 +382,15 @@ export function useWebSocket() {
   }
 
   /* ---- 便捷发送（走 DataChannel） ---- */
-  function sendMotion(linear: number, angular: number, mode = 'manual'): void { _send({ type: 'motion', data: { linear, angular, mode } }) }
+  function sendMotion(v_x: number, v_y: number, v_z_or_mode: number | string = 0): void {
+    // 三轴麦轮协议: sendMotion(v_x, v_y, v_z)
+    if (typeof v_z_or_mode === 'number') {
+      _send({ type: 'motion', data: { v_x, v_y, v_z: v_z_or_mode } })
+    } else {
+      // 双轴兼容协议: sendMotion(linear, angular, mode)
+      _send({ type: 'motion', data: { linear: v_x, angular: v_y, mode: v_z_or_mode } })
+    }
+  }
   function sendMotionStop(): void { _send({ type: 'motion_stop', data: {} }) }
   function sendEmergencyStop(): void { _send({ type: 'emergency_stop', data: {} }) }
   function sendSystemAction(action: string): void { _send({ type: 'system', data: { action } }) }

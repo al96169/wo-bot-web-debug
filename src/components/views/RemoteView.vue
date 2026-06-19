@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useRobotStore } from '@/stores/robot'
 import { useWebSocket, getRemoteFeatures } from '@/composables/useWebSocket'
@@ -119,6 +119,26 @@ function clampJoystick(pos: { x: number; y: number }) {
 
 // ==================== 摇杆绑定 ====================
 
+// 共享麦轮运动状态（平移摇杆 + 偏航摇杆合并写入）
+const motionState = reactive({ v_x: 0, v_y: 0, v_z: 0 })
+
+function speedFromStick(state: JoystickState, axis: 'x' | 'y'): number {
+  const raw = axis === 'y'
+    ? -((state.y - cy) / (cy - knobR))
+    : ((state.x - cx) / (cx - knobR))
+  const deadzone = 0.03
+  if (Math.abs(raw) < deadzone) return 0
+  // 用 raw^0.7 代替 sqrt，中心更灵敏：0.2→0.32, 0.5→0.62, 1.0→1.0
+  return Math.sign(raw) * Math.pow(Math.abs(raw), 0.7)
+}
+
+function sendMergedMotion() {
+  const vx = Math.round(motionState.v_x * 1000) / 1000
+  const vy = Math.round(motionState.v_y * 1000) / 1000
+  const vz = Math.round(motionState.v_z * 1000) / 1000
+  sendMotion(vx, vy, vz)
+}
+
 function setupJoystick(canvasRef: HTMLCanvasElement, key: string) {
   const canvas = canvasRef
   const state = joystickStates[key]
@@ -145,11 +165,23 @@ function setupJoystick(canvasRef: HTMLCanvasElement, key: string) {
     state.x = clamped.x; state.y = clamped.y
     drawJoystick(canvas, state)
 
-    if (key === 'camLeft' || key === 'camRight') {
-      // 速度控制: begin → 服务端启动持续移动循环
+    if (key === 'move' || key === 'yaw') {
+      // Rosmaster 需要持续发包维持运动（约 50ms 间隔），否则固件看门狗超时会停机
+      if (key === 'move') {
+        motionState.v_x = speedFromStick(state, 'y')
+        motionState.v_y = speedFromStick(state, 'x')
+      } else {
+        motionState.v_z = -speedFromStick(state, 'x') * 5.0
+      }
+      sendMergedMotion()
+      updateTimer = setInterval(() => {
+        if (!joystickStates[key].dragging) return
+        sendMergedMotion()
+      }, 50)
+    } else if (key === 'camLeft' || key === 'camRight') {
+      // 云台速度控制
       const spd = gimbalSpeedFromState()
       sendGimbalMoveBegin(spd.pan, spd.tilt)
-      // 50ms 定时更新速度（摇杆位置变化时通过 update 同步）
       updateTimer = setInterval(() => {
         const cur = gimbalSpeedFromState()
         sendGimbalMoveUpdate(cur.pan, cur.tilt)
@@ -164,10 +196,13 @@ function setupJoystick(canvasRef: HTMLCanvasElement, key: string) {
     state.x = clamped.x; state.y = clamped.y
     drawJoystick(canvas, state)
 
-    if (key === 'move' || key === 'yaw') {
-      const linear = -((clamped.y - cy) / (cy - knobR))
-      const angular = ((clamped.x - cx) / (cx - knobR))
-      sendMotion(Math.round(linear * 100) / 100, Math.round(angular * 100) / 100)
+    if (key === 'move') {
+      // 平移摇杆: Y→v_x(前后), X→-v_y(左右平移, X3麦轮vy正=左移)
+      motionState.v_x = speedFromStick(state, 'y')
+      motionState.v_y = -speedFromStick(state, 'x')
+    } else if (key === 'yaw') {
+      // 偏航摇杆: X→v_z(旋转), Rosmaster v_z 范围 [-5, 5]
+      motionState.v_z = -speedFromStick(state, 'x') * 5.0
     }
   }
 
@@ -176,8 +211,21 @@ function setupJoystick(canvasRef: HTMLCanvasElement, key: string) {
     state.x = cx; state.y = cy
     drawJoystick(canvas, state)
 
-    if (key === 'move' || key === 'yaw') {
-      sendMotionStop()
+    if (key === 'move') {
+      motionState.v_x = 0
+      motionState.v_y = 0
+      if (motionState.v_z === 0) {
+        sendMotionStop()
+      } else {
+        sendMergedMotion()
+      }
+    } else if (key === 'yaw') {
+      motionState.v_z = 0
+      if (motionState.v_x === 0 && motionState.v_y === 0) {
+        sendMotionStop()
+      } else {
+        sendMergedMotion()
+      }
     }
     if (updateTimer) { clearInterval(updateTimer); updateTimer = null }
     // 速度控制: end → 服务端停止移动循环
