@@ -273,13 +273,86 @@ function toggleRightCamera() {
   }
 }
 
-// ==================== 键盘 ====================
+// ==================== 键盘控制 ====================
+
+const keyboardPressed = new Set<string>()
+let keyboardTimer: ReturnType<typeof setInterval> | null = null
+
+function keyboardSendLoop() {
+  const k = keyboardPressed
+  // 平移
+  let vx = 0, vy = 0
+  if (k.has('w')) vx = k.has('s') ? 0 : 0.6
+  else if (k.has('s')) vx = -0.6
+  if (k.has('a')) vy = k.has('d') ? 0 : 0.6
+  else if (k.has('d')) vy = -0.6
+  motionState.v_x = vx
+  motionState.v_y = vy
+
+  // 偏航
+  let vz = 0
+  if (k.has('q')) vz = k.has('e') ? 0 : 2.5
+  else if (k.has('e')) vz = -2.5
+  motionState.v_z = vz
+
+  // 可视化: 更新摇杆位置
+  const moveSt = joystickStates.move
+  const yawSt = joystickStates.yaw
+  const maxR = 55 - knobR
+  // move: Y→v_x(前后, 上为正), X→-v_y(左右)
+  moveSt.y = cy - (vx / 1.0) * maxR
+  moveSt.x = cx + (-vy / 1.0) * maxR
+  moveSt.dragging = (vx !== 0 || vy !== 0)
+  // yaw: X→v_z(旋转), v_z>0 左转→摇杆左移
+  yawSt.x = cx - (vz / 5.0) * maxR
+  yawSt.y = cy
+  yawSt.dragging = (vz !== 0)
+
+  if (joystickMoveRef.value) drawJoystick(joystickMoveRef.value, moveSt)
+  if (joystickYawRef.value) drawJoystick(joystickYawRef.value, yawSt)
+
+  sendMergedMotion()
+}
+
+function startKeyboardLoop() {
+  if (keyboardTimer) return
+  keyboardTimer = setInterval(keyboardSendLoop, 50)
+}
+
+function stopKeyboardLoop() {
+  if (keyboardTimer) { clearInterval(keyboardTimer); keyboardTimer = null }
+  motionState.v_x = 0; motionState.v_y = 0; motionState.v_z = 0
+  // 复位摇杆可视化
+  const moveSt = joystickStates.move; moveSt.x = cx; moveSt.y = cy; moveSt.dragging = false
+  const yawSt = joystickStates.yaw; yawSt.x = cx; yawSt.y = cy; yawSt.dragging = false
+  if (joystickMoveRef.value) drawJoystick(joystickMoveRef.value, moveSt)
+  if (joystickYawRef.value) drawJoystick(joystickYawRef.value, yawSt)
+  sendMotionStop()
+}
 
 function handleKeydown(e: KeyboardEvent) {
   if (!appStore.keyboardEnabled) return
-  const keys = new Set(['w', 'a', 's', 'd', 'q', 'e', 'r', 'f', 'z', 'x', ' '])
-  if (!keys.has(e.key.toLowerCase())) return
+  const key = e.key.toLowerCase()
+  const validKeys = ['w', 'a', 's', 'd', 'q', 'e', 'r', 'f', 'z', 'x', ' ']
+  if (!validKeys.includes(key)) return
+  // 云台键盘键（R/F/Z/X）不处理，云台走摇杆
+  if (['r', 'f', 'z', 'x'].includes(key)) return
   e.preventDefault()
+
+  if (key === ' ') { sendEmergencyStop(); return }
+  if (keyboardPressed.has(key)) return  // 防止按住重复触发
+  keyboardPressed.add(key)
+  startKeyboardLoop()
+}
+
+function handleKeyup(e: KeyboardEvent) {
+  const key = e.key.toLowerCase()
+  keyboardPressed.delete(key)
+  // 如果所有运动键都已松开，停止循环
+  const motionKeys = ['w', 'a', 's', 'd', 'q', 'e']
+  if (motionKeys.every(k => !keyboardPressed.has(k))) {
+    stopKeyboardLoop()
+  }
 }
 
 // ==================== 通用操作 ====================
@@ -297,6 +370,7 @@ function handleAction(action: string) {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
+  window.addEventListener('keyup', handleKeyup)
   // 绑定所有摇杆
   if (joystickMoveRef.value) setupJoystick(joystickMoveRef.value, 'move')
   // 云台仅在服务端支持时绑定左摇杆，右侧摇杆保持不可用
@@ -307,7 +381,11 @@ onMounted(() => {
   setTimeout(() => requestCameraStatus(), 1000)
 })
 
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('keyup', handleKeyup)
+  stopKeyboardLoop()
+})
 </script>
 
 <template>
