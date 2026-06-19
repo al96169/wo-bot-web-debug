@@ -3,7 +3,7 @@ import { ref, watch, computed, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useDevicesStore } from '@/stores/devices'
 import { useRobotStore } from '@/stores/robot'
-import { useWebSocket, getRemoteFeatures, setOnReconnect } from '@/composables/useWebSocket'
+import { useWebSocket, getRemoteFeatures } from '@/composables/useWebSocket'
 import { useWebRTC } from '@/composables/useWebRTC'
 import { useMock } from '@/composables/useMock'
 import { useDiscovery } from '@/composables/useDiscovery'
@@ -35,18 +35,18 @@ const { establishConnection: establishWebRTC, close: closeWebRTC, webrtcState } 
 const { startMockMode, stopMockMode } = useMock()
 const { startScan: startDiscoveryScan } = useDiscovery()
 
-// WebSocket 信令连通后，延迟建立 WebRTC（等待 connected 消息含 features）
+// WebSocket 信令连通后 2 秒建立 WebRTC
 let _webrtcTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleWebRTC(): void {
+  console.log('[App] scheduleWebRTC() called')
   if (_webrtcTimer) clearTimeout(_webrtcTimer)
   _webrtcTimer = setTimeout(() => {
     _webrtcTimer = null
+    const features = getRemoteFeatures()
+    console.log('[App] scheduleWebRTC firing, features:', features)
     establishWebRTC()
-  }, 800)  // 稍长一点，确保 connected 消息已处理
+  }, 2000)
 }
-
-// 注册自动重连时的 WebRTC 握手回调
-setOnReconnect(scheduleWebRTC)
 
 // Dialog states
 const showAddDevice = ref(false)
@@ -116,7 +116,7 @@ function connectDirectly(device: Device) {
     console.log('[App] 清理 WebRTC, 发起 WebSocket 连接')
     closeWebRTC()  // 先清理旧 WebRTC 状态
     connect(device.ip, device.port)
-    // WebSocket 信令连通后，延迟建立 WebRTC（等 connected 含 features）
+    // 2 秒后建立 WebRTC（等 connected 消息到达）
     scheduleWebRTC()
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e)

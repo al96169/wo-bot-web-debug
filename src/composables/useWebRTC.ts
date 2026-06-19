@@ -19,15 +19,22 @@ const STUN_SERVER = 'stun:stun.l.google.com:19302'
 // ---- 模块级 answer resolver + pending timer ----
 let _answerResolver: ((sdp: string) => void) | null = null
 let _pendingTimer: ReturnType<typeof setTimeout> | null = null
+let _establishing = false  // 防止并发 establishConnection
 
 /** 清理 pending timer + answer resolver */
 function _clearPending(): void {
   if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null }
-  _answerResolver = null
+  if (_answerResolver) {
+    // 拒绝旧 resolver，避免旧的 establishConnection 永久挂起
+    const oldResolver = _answerResolver
+    _answerResolver = null
+    try { oldResolver('') } catch { /* ignore */ }
+  }
 }
 
 /** 由外部（WebSocket 信令层收到 webrtc_answer 时）调用 */
 export function resolveWebRTCAnswer(sdp: string): void {
+  console.log('[WebRTC] answer received, has resolver:', !!_answerResolver, 'sdp length:', sdp.length)
   if (_answerResolver) {
     _answerResolver(sdp)
     _answerResolver = null
@@ -65,11 +72,22 @@ export function useWebRTC() {
 
   /** 建立 WebRTC 连接（在 WebSocket 信令连通后调用） */
   async function establishConnection(): Promise<void> {
+    if (_establishing) {
+      console.log('[WebRTC] establishConnection skipped: already in progress')
+      return
+    }
+    _establishing = true
+
+    function done(): void { _establishing = false }
+
+    console.log('[WebRTC] establishConnection() called')
     // 检查服务端是否支持 WebRTC
     const features = getRemoteFeatures()
+    console.log('[WebRTC] features:', features)
     if (!features.includes('webrtc')) {
       robotStore.addLog('info', 'WebRTC', '服务端不支持 WebRTC，使用 WebSocket 降级模式')
       webrtcState.value = 'idle'
+      done()
       return
     }
 
@@ -81,6 +99,7 @@ export function useWebRTC() {
     const ws = getSignalingWs()
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       robotStore.addLog('warn', 'WebRTC', '信令通道未就绪，无法建立 WebRTC')
+      done()
       return
     }
 
@@ -94,6 +113,29 @@ export function useWebRTC() {
       pc.value = peerConnection
       _pc = peerConnection  // 模块级引用供 ICE 中继
 
+      // 接收服务端创建的远程 DataChannel（fallback）
+      peerConnection.ondatachannel = (event: RTCDataChannelEvent) => {
+        const rc = event.channel
+        console.log('[WebRTC] Remote DataChannel received:', rc.label)
+        rc.onopen = () => {
+          console.log('[WebRTC] Remote DC opened, using as fallback')
+          robotStore.addLog('info', 'WebRTC', 'DataChannel 已建立 — 业务通道就绪')
+          webrtcState.value = 'connected'
+          appStore.setSSHConnected(true)
+          appStore.showToast('WebRTC 业务通道已建立', 'success')
+          rc.send(JSON.stringify({ type: 'subscribe', data: { events: ['status'] } }))
+        }
+        rc.onmessage = (ev: MessageEvent) => {
+          try { dispatchDataChannelMessage(JSON.parse(ev.data as string)) } catch {}
+        }
+        rc.onclose = () => { if (dc.value === rc) { dc.value = null; setDataChannel(null) } }
+        // 本地 DC 未开时，用远程 DC
+        if (dc.value && dc.value.readyState !== 'open') {
+          dc.value = rc
+          setDataChannel(rc)
+        }
+      }
+
       // 创建 DataChannel
       const channel = peerConnection.createDataChannel('wobot-control', {
         ordered: true,
@@ -102,6 +144,7 @@ export function useWebRTC() {
       setDataChannel(channel)
 
       channel.onopen = () => {
+        console.log('[WebRTC] DataChannel opened!')
         robotStore.addLog('info', 'WebRTC', 'DataChannel 已建立 — 业务通道就绪')
         webrtcState.value = 'connected'
         appStore.setSSHConnected(true)
@@ -119,6 +162,8 @@ export function useWebRTC() {
       }
 
       channel.onclose = () => {
+        // 防止旧 DC 的 onclose 异步触发后覆盖新 DC 状态
+        if (dc.value !== channel) return
         robotStore.addLog('warn', 'WebRTC', 'DataChannel 已关闭')
         webrtcState.value = 'idle'
         appStore.setSSHConnected(false)
@@ -126,22 +171,40 @@ export function useWebRTC() {
       }
 
       channel.onerror = (event: Event) => {
+        if (dc.value !== channel) return
         const err = (event as RTCErrorEvent).error
         const detail = err ? `${err.message ?? err.errorDetail ?? 'unknown'}` : '无详情'
         robotStore.addLog('error', 'WebRTC', `DataChannel 错误: ${detail}`)
       }
 
-      // 接收远端视频流（双摄像头：两个独立 MediaStream）
-      let _trackSeq = 0
+      // 接收远端视频流（双摄像头）
+      // 关键：使用 event.streams[0]（浏览器引擎创建），不是 new MediaStream（Android 兼容）
       peerConnection.ontrack = (event: RTCTrackEvent) => {
-        const stream = new MediaStream([event.track])
-        const idx = _trackSeq++
-        if (idx === 0) {
+        const resolvedStream = event.streams?.[0] || new MediaStream([event.track])
+        console.log('[WebRTC] ontrack:', event.track.id, 'streams:', event.streams?.length ?? 0)
+
+        // 智能复用：热替换已 ended 的 stream slot
+        for (const item of [
+          { ref: videoStream0, label: '摄像头 0' },
+          { ref: videoStream1, label: '摄像头 1' },
+        ]) {
+          const ms = item.ref.value
+          if (!ms) continue
+          const liveTracks = ms.getVideoTracks().filter(t => t.readyState === 'live')
+          if (liveTracks.length === 0) {
+            item.ref.value = resolvedStream
+            robotStore.addLog('info', 'WebRTC', `${item.label} 视频轨已更新`)
+            return
+          }
+        }
+
+        // 按顺序填充空槽位
+        if (!videoStream0.value) {
+          videoStream0.value = resolvedStream
           robotStore.addLog('info', 'WebRTC', '收到摄像头 0 视频流')
-          videoStream0.value = stream
-        } else if (idx === 1) {
+        } else if (!videoStream1.value) {
+          videoStream1.value = resolvedStream
           robotStore.addLog('info', 'WebRTC', '收到摄像头 1 视频流')
-          videoStream1.value = stream
         }
       }
 
@@ -160,6 +223,7 @@ export function useWebRTC() {
       }
 
       peerConnection.onconnectionstatechange = () => {
+        if (pc.value !== peerConnection) return  // 不是当前活跃的 PC
         const state = peerConnection.connectionState
         robotStore.addLog('info', 'WebRTC', `连接状态: ${state}`)
         if (state === 'connected') {
@@ -178,6 +242,7 @@ export function useWebRTC() {
       // 创建 SDP offer
       const offer = await peerConnection.createOffer()
       await peerConnection.setLocalDescription(offer)
+      console.log('[WebRTC] Offer SDP has DC:', offer.sdp?.includes('m=application') ?? false)
 
       ws.send(JSON.stringify({ type: 'webrtc_offer', data: { sdp: offer.sdp } }))
 
@@ -188,17 +253,21 @@ export function useWebRTC() {
       })
 
       if (!answer) {
+        console.log('[WebRTC] answer timed out or rejected')
         robotStore.addLog('error', 'WebRTC', '等待 SDP answer 超时')
         webrtcState.value = 'failed'
         return
       }
 
       await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answer }))
+      console.log('[WebRTC] setRemoteDescription OK, connectionState:', peerConnection.connectionState)
       robotStore.addLog('info', 'WebRTC', 'WebRTC 连接建立完成')
 
     } catch (e) {
       robotStore.addLog('error', 'WebRTC', `WebRTC 连接失败: ${e}`)
       webrtcState.value = 'failed'
+    } finally {
+      _establishing = false
     }
   }
 
@@ -312,11 +381,11 @@ export function useWebRTC() {
   /** 关闭连接 */
   function close(): void {
     _clearPending()
+    _establishing = false  // 重置建立状态，允许重新连接
     if (dc.value) { dc.value.close(); dc.value = null }
     if (pc.value) { pc.value.close(); pc.value = null }
     _pc = null
-    videoStream0.value = null
-    videoStream1.value = null
+    // 不置空 videoStream: 移动端视频管线重置后 srcObject→null 会导致后续播放失败
     setDataChannel(null)
     webrtcState.value = 'idle'
     robotStore.addLog('info', 'WebRTC', 'WebRTC 连接已关闭')

@@ -38,8 +38,8 @@ interface WsMsg { type: string; data?: Record<string, unknown> }
 let _dc: RTCDataChannel | null = null
 let _pendingQueue: string[] = []
 /** 服务端支持的功能列表（从 connected 消息解析） */
-let _remoteFeatures: string[] = []
-export function getRemoteFeatures(): string[] { return _remoteFeatures }
+const _remoteFeatures = ref<string[]>([])
+export function getRemoteFeatures(): string[] { return _remoteFeatures.value }
 
 /** 响应式 DataChannel 就绪状态（供 Vue computed 使用） */
 export const dcReady = ref(false)
@@ -116,6 +116,8 @@ export function useWebSocket() {
     // 清理旧连接（如果有的话）
     if (_ws) {
       console.log('[WS] connect() 断开旧连接, readyState:', _ws.readyState)
+      // 先标记然后断开，旧 socket 的异步 onclose 不会触发重连
+      _intentionalDisconnect = true
       disconnect()
     }
     _intentionalDisconnect = false
@@ -202,6 +204,7 @@ export function useWebSocket() {
     if (_ws) { _ws.close(); _ws = null }
     ws.value = null
     appStore.connection = 'disconnected'
+    _remoteFeatures.value = []  // 清空 features，下次连接重新获取
     appStore.setSSHConnected(false)
     robotStore.addLog('info', 'Signaling', '主动断开信令')
   }
@@ -233,7 +236,7 @@ export function useWebSocket() {
           model: String(data.model ?? ''), version: String(data.version ?? ''),
           features: Array.isArray(data.features) ? (data.features as string[]) : [],
         })
-        _remoteFeatures = Array.isArray(data.features) ? (data.features as string[]) : []
+        _remoteFeatures.value = Array.isArray(data.features) ? (data.features as string[]) : []
         // 连接成功后自动订阅状态 + 获取摄像头列表
         _send({ type: 'subscribe', data: { events: ['status'] } })
         requestCameraStatus()
@@ -264,6 +267,10 @@ export function useWebSocket() {
           environment: { temperature: '--', humidity: '--', gas: '--', light: '--' },
           uptime: Number(sys.uptime ?? 0), hostname: String(sys.hostname ?? '--'),
         })
+        // 从 status 中同步 features（确保平板等客户端也能获取最新功能列表）
+        if (Array.isArray(data.features) && data.features.length > 0) {
+          _remoteFeatures.value = data.features as string[]
+        }
         break
       }
       case 'exec_result': {
@@ -393,6 +400,7 @@ export function useWebSocket() {
   }
   function sendMotionStop(): void { _send({ type: 'motion_stop', data: {} }) }
   function sendEmergencyStop(): void { _send({ type: 'emergency_stop', data: {} }) }
+  function sendEmergencyRelease(): void { _send({ type: 'emergency_release', data: {} }) }
   function sendSystemAction(action: string): void { _send({ type: 'system', data: { action } }) }
   function sendExec(command: string, timeout = 5000): void { _send({ type: 'exec', data: { command, timeout } }) }
   function sendCamera(action: string, cameraId = 0): void { _send({ type: 'camera', data: { action, camera_id: cameraId } }) }
@@ -417,7 +425,7 @@ export function useWebSocket() {
   return {
     ws, reconnectCount, lastMessage,
     connect, disconnect, send: _send, cleanup,
-    sendMotion, sendMotionStop, sendEmergencyStop, sendSystemAction, sendExec, sendCamera,
+    sendMotion, sendMotionStop, sendEmergencyStop, sendEmergencyRelease, sendSystemAction, sendExec, sendCamera,
     requestCameraStatus, sendGimbal, sendGimbalMove,
     sendGimbalMoveBegin, sendGimbalMoveUpdate, sendGimbalMoveEnd, sendGimbalCenter,
     requestSoftwareList, requestSoftwareSearch, requestModuleList, sendDeviceControl, sendSoftwareAction,

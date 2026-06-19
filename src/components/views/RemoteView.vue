@@ -7,8 +7,8 @@ import { useWebRTC } from '@/composables/useWebRTC'
 
 const appStore = useAppStore()
 const robotStore = useRobotStore()
-const { sendMotion, sendMotionStop, sendEmergencyStop, sendCamera, sendGimbal, sendGimbalMove, sendGimbalMoveBegin, sendGimbalMoveUpdate, sendGimbalMoveEnd, sendGimbalCenter, requestCameraStatus } = useWebSocket()
-const { videoStream0, videoStream1, reconnect: reconnectWebRTC } = useWebRTC()
+const { sendMotion, sendMotionStop, sendEmergencyStop, sendEmergencyRelease, sendCamera, sendGimbal, sendGimbalMove, sendGimbalMoveBegin, sendGimbalMoveUpdate, sendGimbalMoveEnd, sendGimbalCenter, requestCameraStatus } = useWebSocket()
+const { videoStream0, videoStream1 } = useWebRTC()
 
 // 云台功能是否可用（服务端 features 包含 "gimbal"）
 const gimbalAvailable = computed(() => getRemoteFeatures().includes('gimbal'))
@@ -27,21 +27,48 @@ const leftCameraId = computed(() => robotStore.cameras.length > 0 ? 0 : null)
 const rightCameraId = computed(() => robotStore.cameras.length > 1 ? 1 : null)
 
 // 绑定 WebRTC 视频流到 <video> 元素（双摄像头独立流）
-// 视频元素始终在 DOM 中（通过 CSS 显隐），避免 v-if 销毁重建导致 ref 时序问题
+// 流到达时始终设 srcObject（桌面 autoplay+muted 自动解码）
+// 移动端：用户点击"开启摄像头"时调用 play() 激活
 watch(videoStream0, (stream) => {
   if (stream && videoLeftRef.value) {
     videoLeftRef.value.srcObject = stream
-    videoLeftRef.value.play().catch(() => {})
   }
 }, { immediate: true, flush: 'post' })
 watch(videoStream1, (stream) => {
   if (stream && videoRightRef.value) {
     videoRightRef.value.srcObject = stream
-    videoRightRef.value.play().catch(() => {})
   }
 }, { immediate: true, flush: 'post' })
 
-// Joystick state
+// 视频调试信息
+const videoDebug0 = ref<string>('')
+const videoDebug1 = ref<string>('')
+let _debugTimer0: ReturnType<typeof setInterval> | null = null
+let _debugTimer1: ReturnType<typeof setInterval> | null = null
+
+function updateVideoDebug(idx: 0 | 1): void {
+  const videoEl = idx === 0 ? videoLeftRef.value : videoRightRef.value
+  const dbgRef = idx === 0 ? videoDebug0 : videoDebug1
+  if (!videoEl) return
+  const track = (idx === 0 ? videoStream0.value : videoStream1.value)?.getVideoTracks()?.[0]
+  dbgRef.value = [
+    `srcObj:${!!videoEl.srcObject}`,
+    `pause:${videoEl.paused}`,
+    `${videoEl.videoWidth}x${videoEl.videoHeight}`,
+    `ready:${videoEl.readyState}`,
+    `trk:${track?.readyState ?? '-'}/${track?.enabled ?? '-'}`,
+    videoEl.muted ? 'muted' : 'unmuted',
+  ].join(' ')
+}
+
+function startDebugLoop(idx: 0 | 1): void {
+  const existing = idx === 0 ? _debugTimer0 : _debugTimer1
+  if (existing) return
+  const timer = setInterval(() => { updateVideoDebug(idx) }, 500)
+  if (idx === 0) _debugTimer0 = timer
+  else _debugTimer1 = timer
+  updateVideoDebug(idx)
+}
 interface JoystickState {
   x: number; y: number; dragging: boolean
 }
@@ -252,9 +279,15 @@ function toggleLeftCamera() {
   cameraLeftOn.value = !cameraLeftOn.value
   const action = cameraLeftOn.value ? 'start' : 'stop'
   robotStore.addCmdLog({ time: textTime(), direction: 'send', type: 'camera', data: `左摄像头(${camId}) → ${action}` })
-  // 开启时先重建 WebRTC 连接（新 ontrack → 新 MediaStream），再发 start 命令
   if (cameraLeftOn.value) {
-    reconnectWebRTC().then(() => sendCamera(action, camId))
+    const v = videoLeftRef.value
+    if (v && videoStream0.value) {
+      // 同步清空+重设 srcObject，保持用户手势上下文
+      v.srcObject = null
+      v.srcObject = videoStream0.value
+      v.play().catch(() => {})
+    }
+    sendCamera(action, camId)
   } else {
     sendCamera(action, camId)
   }
@@ -267,7 +300,13 @@ function toggleRightCamera() {
   const action = cameraRightOn.value ? 'start' : 'stop'
   robotStore.addCmdLog({ time: textTime(), direction: 'send', type: 'camera', data: `右摄像头(${camId}) → ${action}` })
   if (cameraRightOn.value) {
-    reconnectWebRTC().then(() => sendCamera(action, camId))
+    const v = videoRightRef.value
+    if (v && videoStream1.value) {
+      v.srcObject = null
+      v.srcObject = videoStream1.value
+      v.play().catch(() => {})
+    }
+    sendCamera(action, camId)
   } else {
     sendCamera(action, camId)
   }
@@ -363,19 +402,34 @@ function handleAction(action: string) {
     sendEmergencyStop()
     return
   }
-  appStore.toggleAction(action)
+  if (action === 'emergency_release') {
+    robotStore.addCmdLog({ time: textTime(), direction: 'send', type: 'emergency_release', data: '释放急停' })
+    sendEmergencyRelease()
+    return
+  }
+  appStore.toggleAction(action as any)
 }
 
 // ==================== 初始化 ====================
 
+// 云台摇杆: gimbalAvailable 可能异步到达，用 watch 延迟绑定
+let _gimbalJoystickSetup = false
+watch(gimbalAvailable, (available) => {
+  if (available && !_gimbalJoystickSetup && joystickCamLeftRef.value) {
+    _gimbalJoystickSetup = true
+    setupJoystick(joystickCamLeftRef.value, 'camLeft')
+  }
+}, { immediate: true })
+
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
   window.addEventListener('keyup', handleKeyup)
-  // 绑定所有摇杆
+  // 绑定平移和偏航摇杆（不需要服务端功能支持）
   if (joystickMoveRef.value) setupJoystick(joystickMoveRef.value, 'move')
-  // 云台仅在服务端支持时绑定左摇杆，右侧摇杆保持不可用
-  if (joystickCamLeftRef.value && gimbalAvailable.value) setupJoystick(joystickCamLeftRef.value, 'camLeft')
   if (joystickYawRef.value) setupJoystick(joystickYawRef.value, 'yaw')
+  // 立即启动视频调试信息（每 500ms 刷新）
+  startDebugLoop(0)
+  startDebugLoop(1)
   // 右云台摇杆不绑定，保持不可用
   // 延迟等待 WebSocket 连接就绪后请求摄像头列表
   setTimeout(() => requestCameraStatus(), 1000)
@@ -385,6 +439,8 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('keyup', handleKeyup)
   stopKeyboardLoop()
+  if (_debugTimer0) { clearInterval(_debugTimer0); _debugTimer0 = null }
+  if (_debugTimer1) { clearInterval(_debugTimer1); _debugTimer1 = null }
 })
 </script>
 
@@ -400,9 +456,10 @@ onUnmounted(() => {
               <video
                 ref="videoLeftRef"
                 class="camera-feed"
-                :class="{ hidden: !cameraLeftOn || !videoStream0 }"
-                autoplay playsinline muted
+                autoplay muted playsinline
+                width="640" height="480"
               ></video>
+              <div class="video-debug">{{ videoDebug0 || '等待流...' }}</div>
               <div class="camera-placeholder" v-if="!cameraLeftOn">
                 <p>📷 {{ robotStore.cameras[0]?.name || '左摄像头' }}</p>
                 <p class="hint">点击开启摄像头</p>
@@ -425,9 +482,10 @@ onUnmounted(() => {
               <video
                 ref="videoRightRef"
                 class="camera-feed"
-                :class="{ hidden: !cameraRightOn || !videoStream1 }"
-                autoplay playsinline muted
+                autoplay muted playsinline
+                width="640" height="480"
               ></video>
+              <div class="video-debug">{{ videoDebug1 || '等待流...' }}</div>
               <div class="camera-placeholder" v-if="rightCameraId === null">
                 <p>📷 右摄像头</p>
                 <p class="hint">未检测到摄像头</p>
@@ -499,6 +557,7 @@ onUnmounted(() => {
               @click="sendGimbalCenter()"
             >🎯 回中</button>
             <button class="action-btn danger" @click="handleAction('emergency')">🛑 急停</button>
+            <button class="action-btn center" @click="handleAction('emergency_release')">✅ 释放</button>
           </div>
           <div v-if="gimbalAvailable" class="gimbal-status">
             <span class="gimbal-angle">水平: {{ robotStore.gimbal.pan }}°</span>
@@ -524,12 +583,22 @@ onUnmounted(() => {
   flex: 1; min-height: 180px; background: var(--bg-secondary);
   border: 1px solid var(--border); border-radius: var(--radius-lg);
   display: flex; align-items: center; justify-content: center; overflow: hidden;
+  position: relative;
 }
 .camera-dual-container.disabled { opacity: 0.5; }
 .camera-dual-container.disabled .camera-placeholder { color: var(--text-muted); }
-.camera-placeholder { text-align: center; color: var(--text-muted); }
+.camera-placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--text-muted); background: var(--bg-secondary); z-index: 1;
+}
 .camera-feed { width: 100%; height: 100%; object-fit: cover; }
-.camera-feed.hidden { display: none; }
+.video-debug {
+    position: absolute; top: 2px; right: 2px; z-index: 99;
+    font-size: 10px; font-family: monospace; color: #ff0; line-height: 1.3;
+    background: rgba(0,0,0,0.85); padding: 2px 5px; border-radius: 2px;
+    pointer-events: none; white-space: nowrap; max-width: 90%; overflow: hidden; text-overflow: ellipsis;
+  }
 .camera-placeholder .hint { font-size: 12px; margin-top: 8px; }
 .camera-controls { display: flex; gap: 8px; }
 .camera-controls button {

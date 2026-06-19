@@ -20,5 +20,16 @@
   <body>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
+    <!-- vConsole：移动端调试面板（本地文件，无需外网） -->
+    <script src="/vconsole.min.js"></script>
+    <script>
+      (function() {
+        var isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+        var hasDebug = /[?&]debug/.test(location.search);
+        if (isMobile || hasDebug) {
+          new window.VConsole();
+        }
+      })();
+    </script>
   </body>
 </html>
