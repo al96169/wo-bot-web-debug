@@ -22,10 +22,38 @@ const emit = defineEmits<{
   addDevice: []
 }>()
 
+function isSameDevice(a: Device, b: Device): boolean {
+  return a.id === b.id || (a.ip === b.ip && a.port === b.port)
+}
+
+/** 当前设备标识符集合（id + ip:port），用于模板中 O(1) 匹配且保证响应式 */
+const currentDeviceKeys = computed(() => {
+  const cd = devicesStore.currentDevice
+  if (!cd) return { id: '', key: '' }
+  return { id: cd.id, key: `${cd.ip}:${cd.port}` }
+})
+
+function isCurrentDevice(device: Device): boolean {
+  const keys = currentDeviceKeys.value
+  return device.id === keys.id || `${device.ip}:${device.port}` === keys.key
+}
+
 function handleDeviceClick(device: Device) {
+  console.log('[Sidebar] 点击设备:', { name: device.name, ip: device.ip, port: device.port, hasCurrentDevice: !!devicesStore.currentDevice, isSame: devicesStore.currentDevice ? isSameDevice(devicesStore.currentDevice, device) : 'N/A', connection: appStore.connection })
   if (!devicesStore.currentDevice) {
+    console.log('[Sidebar] 无当前设备, 发起连接')
     emit('selectDevice', device)
-  } else if (devicesStore.currentDevice.id !== device.id) {
+  } else if (!isSameDevice(devicesStore.currentDevice, device)) {
+    console.log('[Sidebar] 不同设备, 发起切换')
+    emit('selectDevice', device)
+  } else if (appStore.connection === 'connected') {
+    console.log('[Sidebar] 同一设备已连接, 显示 Toast')
+    appStore.showToast('当前设备已连接', 'info')
+  } else if (appStore.connection === 'connecting') {
+    console.log('[Sidebar] 同一设备连接中, 显示 Toast')
+    appStore.showToast('正在连接中...', 'info')
+  } else {
+    console.log('[Sidebar] 同一设备, 连接状态:', appStore.connection, '-> 重新连接')
     emit('selectDevice', device)
   }
 }
@@ -36,7 +64,7 @@ function handleAddDevice() {
 
 /** 统一设备状态：当前设备跟随 appStore.connection，其他设备跟随 device.online */
 function getDeviceStatus(device: Device): { text: string; cls: string } {
-  const isCurrent = devicesStore.currentDevice?.id === device.id
+  const isCurrent = isCurrentDevice(device)
   if (isCurrent) {
     if (appStore.connection === 'connected') return { text: '● 已连接', cls: '' }
     if (appStore.connection === 'connecting') return { text: '● 连接中...', cls: '' }
@@ -56,12 +84,12 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
             v-for="device in devicesStore.devices"
             :key="device.id"
             class="device-card"
-            :class="{ active: devicesStore.currentDevice?.id === device.id }"
+            :class="{ active: device.id === currentDeviceKeys.id || `${device.ip}:${device.port}` === currentDeviceKeys.key }"
             @click="handleDeviceClick(device)"
           >
             <div class="device-card-header">
               <span class="device-name">{{ device.name }}</span>
-              <span class="device-badge" v-if="devicesStore.currentDevice?.id === device.id">当前设备</span>
+              <span class="device-badge" v-if="device.id === currentDeviceKeys.id || `${device.ip}:${device.port}` === currentDeviceKeys.key">当前设备</span>
             </div>
             <div class="device-ip">{{ device.ip }}:{{ device.port }}</div>
             <div class="device-status-line" :class="getDeviceStatus(device).cls">
@@ -85,12 +113,12 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
             v-for="device in devicesStore.discovered"
             :key="device.id"
             class="device-card"
-            :class="{ active: devicesStore.currentDevice?.id === device.id }"
+            :class="{ active: device.id === currentDeviceKeys.id || `${device.ip}:${device.port}` === currentDeviceKeys.key }"
             @click="handleDeviceClick(device)"
           >
             <div class="device-card-header">
               <span class="device-name">{{ device.name }}</span>
-              <span class="device-badge" v-if="devicesStore.currentDevice?.id === device.id">当前设备</span>
+              <span class="device-badge" v-if="device.id === currentDeviceKeys.id || `${device.ip}:${device.port}` === currentDeviceKeys.key">当前设备</span>
             </div>
             <div class="device-ip">{{ device.ip }}:{{ device.port }}</div>
             <div class="device-status-line" :class="getDeviceStatus(device).cls">

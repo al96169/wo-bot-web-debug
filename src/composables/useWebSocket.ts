@@ -23,6 +23,8 @@ let _reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let _connectedIp = ''
 let _connectedPort = 0
 let _token = ''
+/** 标记是否为主动断开，防止 onclose 触发无意义重连 */
+let _intentionalDisconnect = false
 
 /** 重连时触发 WebRTC 握手（由 App.vue 设置） */
 let _onReconnect: (() => void) | null = null
@@ -109,21 +111,35 @@ export function useWebSocket() {
   const robotStore = useRobotStore()
 
   function connect(ip: string, port: number): void {
-    if (_ws) disconnect()
+    console.log('[WS] connect() 调用:', { ip, port, currentIp: _connectedIp, currentPort: _connectedPort, hasWs: !!_ws, readyState: _ws?.readyState, intentionalDisconnect: _intentionalDisconnect })
+
+    // 清理旧连接（如果有的话）
+    if (_ws) {
+      console.log('[WS] connect() 断开旧连接, readyState:', _ws.readyState)
+      disconnect()
+    }
+    _intentionalDisconnect = false
     appStore.connection = 'connecting'
-    reconnectCount.value = 0
     _connectedIp = ip
     _connectedPort = port
-    let url = `ws://${ip}:${port}`
-    if (_token) {
-      url += `?token=${encodeURIComponent(_token)}`
+    // 开发模式通过 Vite WebSocket 代理连接，绕过浏览器跨域/IP 限制
+    let url: string
+    if (import.meta.env.DEV) {
+      url = `ws://${window.location.host}/api/device-ws?host=${encodeURIComponent(ip)}&port=${port}`
+    } else {
+      url = `ws://${ip}:${port}`
     }
+    if (_token) {
+      url += `${import.meta.env.DEV ? '&' : '?'}token=${encodeURIComponent(_token)}`
+    }
+    console.log('[WS] connect() 创建 WebSocket:', url)
     const socket = new WebSocket(url)
     _ws = socket
     ws.value = socket
 
     _connectTimer = setTimeout(() => {
       if (socket.readyState !== WebSocket.OPEN) {
+        console.warn('[WS] 连接超时:', { ip, port, readyState: socket.readyState })
         socket.close()
         appStore.connection = 'error'
         appStore.showToast(`连接超时: ${ip}:${port}`, 'error')
@@ -133,6 +149,7 @@ export function useWebSocket() {
     }, CONNECT_TIMEOUT)
 
     socket.onopen = () => {
+      console.log('[WS] onopen: 已连接', { ip, port })
       if (_connectTimer) { clearTimeout(_connectTimer); _connectTimer = null }
       appStore.connection = 'connected'
       appStore.showToast('信令通道已建立', 'success')
@@ -157,13 +174,20 @@ export function useWebSocket() {
       } catch { robotStore.addLog('warn', 'Signaling', '收到非 JSON 消息') }
     }
 
-    socket.onerror = () => {
+    socket.onerror = (event: Event) => {
+      console.error('[WS] onerror 触发:', { ip, port, readyState: socket.readyState, isActive: socket === _ws })
       appStore.connection = 'error'
       appStore.showToast(`连接失败: ${ip}:${port}`, 'error')
       robotStore.addLog('error', 'Signaling', `连接错误: ${ip}:${port}`)
     }
 
-    socket.onclose = () => {
+    socket.onclose = (event: CloseEvent) => {
+      console.log('[WS] onclose 触发:', { ip, port, code: event.code, reason: event.reason, wasClean: event.wasClean, isActive: socket === _ws, intentionalDisconnect: _intentionalDisconnect })
+      // 只处理当前活跃 socket 的关闭事件，忽略已替换的旧 socket
+      if (socket !== _ws) {
+        console.log('[WS] onclose 忽略: 旧 socket (已被替换)')
+        return
+      }
       appStore.connection = 'disconnected'
       appStore.setSSHConnected(false)
       robotStore.addLog('warn', 'Signaling', `信令已断开: ${ip}:${port}`)
@@ -172,8 +196,9 @@ export function useWebSocket() {
   }
 
   function disconnect(): void {
+    console.log('[WS] disconnect() 主动断开', { currentIp: _connectedIp, currentPort: _connectedPort, hasWs: !!_ws, readyState: _ws?.readyState })
+    _intentionalDisconnect = true
     _clearTimers()
-    reconnectCount.value = MAX_RECONNECT
     if (_ws) { _ws.close(); _ws = null }
     ws.value = null
     appStore.connection = 'disconnected'
@@ -182,9 +207,12 @@ export function useWebSocket() {
   }
 
   function maybeReconnect(ip: string, port: number): void {
-    if (reconnectCount.value >= MAX_RECONNECT) return
-    if (appStore.mockMode) return
+    console.log('[WS] maybeReconnect() 检查:', { ip, port, intentionalDisconnect: _intentionalDisconnect, reconnectCount: reconnectCount.value, maxReconnect: MAX_RECONNECT, mockMode: appStore.mockMode })
+    if (_intentionalDisconnect) { console.log('[WS] maybeReconnect() 跳过: 主动断开'); return }
+    if (reconnectCount.value >= MAX_RECONNECT) { console.log('[WS] maybeReconnect() 跳过: 已达最大重连次数'); return }
+    if (appStore.mockMode) { console.log('[WS] maybeReconnect() 跳过: Mock 模式'); return }
     reconnectCount.value++
+    console.log('[WS] maybeReconnect() 安排重连:', reconnectCount.value, '/', MAX_RECONNECT)
     robotStore.addLog('info', 'Signaling', `正在尝试重连 (${reconnectCount.value}/${MAX_RECONNECT})...`)
     _reconnectTimer = setTimeout(() => connect(ip, port), RECONNECT_DELAY * reconnectCount.value)
   }

@@ -135,6 +135,7 @@ export const useDevicesStore = defineStore('devices', {
 
     /** 直接设置当前设备（App.vue 连接流程使用） */
     setCurrentDevice(device: Device | null): void {
+      console.log('[DevicesStore] setCurrentDevice:', device?.name, device?.id, device?.ip)
       this.currentDevice = device
       this.saveDevices()
     },

@@ -78,18 +78,33 @@ watch(() => appStore.theme, () => {
 
 // Handle sidebar device select
 function handleSelectDevice(device: Device) {
+  const sameDevice = (a: Device, b: Device) => a.id === b.id || (a.ip === b.ip && a.port === b.port)
+  console.log('[App] handleSelectDevice:', { name: device.name, ip: device.ip, port: device.port, hasCurrentDevice: !!devicesStore.currentDevice, isSame: devicesStore.currentDevice ? sameDevice(devicesStore.currentDevice, device) : 'N/A', connection: appStore.connection })
   if (!devicesStore.currentDevice) {
+    console.log('[App] 无当前设备 -> connectDirectly')
     connectDirectly(device)
-  } else if (devicesStore.currentDevice.id !== device.id) {
+  } else if (!sameDevice(devicesStore.currentDevice, device)) {
+    console.log('[App] 不同设备 -> 弹出切换确认')
     switchTarget.value = device
+  } else if (appStore.connection === 'connected') {
+    console.log('[App] 同一设备已连接, 显示 Toast')
+    appStore.showToast('当前设备已连接', 'info')
+  } else if (appStore.connection === 'connecting') {
+    console.log('[App] 同一设备连接中, 显示 Toast')
+    appStore.showToast('正在连接中...', 'info')
+  } else {
+    console.log('[App] 同一设备, 连接状态:', appStore.connection, '-> 重新连接')
+    connectDirectly(device)
   }
 }
 
 function connectDirectly(device: Device) {
+  console.log('[App] connectDirectly:', { name: device.name, ip: device.ip, port: device.port, mockMode: appStore.mockMode })
   devicesStore.setCurrentDevice(device)
 
   // Mock mode: skip WebSocket, just switch to this device
   if (appStore.mockMode) {
+    console.log('[App] Mock 模式, 跳过 WebSocket')
     appStore.connection = 'connected'
     appStore.showToast('已切换到 Mock 模式', 'success')
     return
@@ -98,12 +113,14 @@ function connectDirectly(device: Device) {
   appStore.mockMode = false
   stopMockMode()
   try {
+    console.log('[App] 清理 WebRTC, 发起 WebSocket 连接')
     closeWebRTC()  // 先清理旧 WebRTC 状态
     connect(device.ip, device.port)
     // WebSocket 信令连通后，延迟建立 WebRTC（等 connected 含 features）
     scheduleWebRTC()
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e)
+    console.error('[App] connectDirectly 异常:', errMsg)
     appStore.connection = 'error'
     appStore.showToast(`无法连接到 ${device.name}`, 'error')
     robotStore.addLog('error', '连接', `连接失败: ${device.name} - ${errMsg}`)
