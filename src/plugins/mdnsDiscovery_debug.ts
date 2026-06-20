@@ -7,7 +7,7 @@ function mdnsDiscoveryPlugin(): Plugin {
   return {
     name: "wo-bot-mdns-discovery-debug",
     configureServer(server) {
-      server.middlewares.use("/api/discover-debug", async (req, res) => {
+      server.middlewares.use("/api/discover-debug", async (_req, res) => {
         const Bonjour = (await import("bonjour-service")).default;
         const bonjour = new Bonjour();
         const all: any[] = [];

@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useRobotStore } from "@/stores/robot";
 import { useWebSocket } from "@/composables/useWebSocket";
+import type { ToggleKey } from "@/types";
 
 const appStore = useAppStore();
 const robotStore = useRobotStore();
 const { sendDeviceControl, sendEmergencyStop } = useWebSocket();
 
-const actionItems = [
+const actionItems: { action: ToggleKey | "emergency"; label: string; cssClass: string; cmdType: string }[] = [
   { action: "find", label: "🔔 寻找设备", cssClass: "toggle", cmdType: "find" },
   { action: "flashlight", label: "🔦 手电", cssClass: "toggle", cmdType: "flashlight" },
   { action: "charge", label: "🔌 去充电", cssClass: "toggle", cmdType: "charge" },
@@ -24,8 +24,9 @@ function textTime() {
 function handleAction(action: string, cmdType: string) {
   const isToggle = ["find", "flashlight", "charge", "mute", "eco"].includes(action);
   if (isToggle) {
-    const next = !appStore.toggleStates[action];
-    appStore.toggleStates[action] = next;
+    const key = action as ToggleKey;
+    const next = !appStore.toggleStates[key];
+    appStore.toggleStates[key] = next;
     robotStore.addCmdLog({
       time: textTime(),
       direction: "send",
@@ -68,14 +69,6 @@ function handleVolumeChange(e: Event) {
     robotStore.addLog("info", "QuickAction", `音量调节: ${val}%`);
   }, 300);
 }
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const volumeIcon = computed(() => {
-  const v = appStore.volume;
-  if (v === 0) return "🔇";
-  if (v < 50) return "🔉";
-  return "🔊";
-});
 </script>
 
 <template>
@@ -88,7 +81,7 @@ const volumeIcon = computed(() => {
         class="action-card"
         :class="{
           [item.cssClass]: true,
-          active: item.cssClass === 'toggle' && appStore.toggleStates[item.action],
+          active: item.cssClass === 'toggle' && (appStore.toggleStates as Record<string, boolean>)[item.action],
         }"
         @click="handleAction(item.action, item.cmdType)"
       >

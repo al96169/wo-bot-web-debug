@@ -2,31 +2,28 @@
 import { ref, onMounted, onUnmounted } from "vue";
 
 const mapContainer = ref<HTMLDivElement | null>(null);
-let mapInstance: unknown = null;
+let mapInstance: any = null;
 const noGps = ref(false);
 
 onMounted(() => {
-  // Check if Leaflet is available
-  if (typeof window !== "undefined" && (window as Record<string, unknown>).L) {
-    const L = (window as unknown as { L: Record<string, unknown> }).L;
-    if (mapContainer.value) {
-      mapInstance = (L as Record<string, (id: string) => unknown>).map(mapContainer.value, {
-        center: [39.9042, 116.4074],
-        zoom: 12,
-        zoomControl: false,
-      });
-      const tileLayer = (L as Record<string, (url: string, opts: Record<string, unknown>) => unknown>).tileLayer(
-        "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
-        { subdomains: ["1", "2", "3", "4"], maxZoom: 18 },
-      );
-      (tileLayer as Record<string, (m: unknown) => void>).addTo(mapInstance);
+  // Leaflet 通过 CDN 动态加载，无类型声明
+  const win = window as any;
+  if (win.L && mapContainer.value) {
+    const L = win.L;
+    mapInstance = L.map(mapContainer.value, {
+      center: [39.9042, 116.4074],
+      zoom: 12,
+      zoomControl: false,
+    });
+    const tileLayer = L.tileLayer(
+      "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+      { subdomains: ["1", "2", "3", "4"], maxZoom: 18 },
+    );
+    tileLayer.addTo(mapInstance);
 
-      const zoomControl = (L as Record<string, (opts: Record<string, string>) => unknown>).control?.zoom?.({
-        position: "topright",
-      });
-      if (zoomControl) {
-        (zoomControl as Record<string, (m: unknown) => void>).addTo?.(mapInstance);
-      }
+    const zoomControl = L.control?.zoom?.({ position: "topright" });
+    if (zoomControl) {
+      zoomControl.addTo?.(mapInstance);
     }
   } else {
     noGps.value = true;
@@ -35,8 +32,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (mapInstance) {
-    const m = mapInstance as { remove: () => void };
-    m.remove();
+    mapInstance.remove();
     mapInstance = null;
   }
 });

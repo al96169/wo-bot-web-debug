@@ -48,8 +48,6 @@ export function useMock() {
 
   // 计数器
   let logCounter = 0;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let msgCounter = 0;
   let discoveryCounter = 0;
 
   // 定时器句柄
@@ -218,7 +216,6 @@ export function useMock() {
       body: `详细内容：${subject} 已完成。各项指标正常，建议定期检查。`,
       read: i > 2,
     }));
-    msgCounter = msgs.length + 1;
     robotStore.setMessages(msgs);
   }
 
