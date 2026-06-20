@@ -18,6 +18,8 @@ function wsProxyPlugin() {
 
         const host = url.searchParams.get('host')
         const port = url.searchParams.get('port')
+        const protocolVersion = url.searchParams.get('protocol_version')
+        const token = url.searchParams.get('token')
 
         if (!host || !port) {
           socket.write('HTTP/1.1 400 Bad Request\r\n\r\n')
@@ -25,17 +27,21 @@ function wsProxyPlugin() {
           return
         }
 
-        const targetUrl = `ws://${host}:${port}`
+        let targetUrl = `ws://${host}:${port}`
+        const targetParams: string[] = []
+        if (protocolVersion) targetParams.push(`protocol_version=${encodeURIComponent(protocolVersion)}`)
+        if (token) targetParams.push(`token=${encodeURIComponent(token)}`)
+        if (targetParams.length > 0) targetUrl += '?' + targetParams.join('&')
         const targetWs = new WebSocket(targetUrl)
         let clientWs: any = null
         let closed = false
 
-        function safeClose(ws: any) {
+        function safeClose(ws: any, code?: number, reason?: string) {
           if (closed) return
           closed = true
           try {
             if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-              ws.close(1000)
+              ws.close(code ?? 1000, reason)
             }
           } catch { /* ignore */ }
         }
@@ -43,6 +49,15 @@ function wsProxyPlugin() {
         targetWs.on('error', (err: Error) => {
           console.error('[WS Proxy] 目标连接失败:', err.message)
           if (clientWs) safeClose(clientWs)
+        })
+
+        // 消息缓冲：targetWs 未 OPEN 时暂存，OPEN 后发送
+        const pendingQueue: Array<{ data: any; isBinary: boolean }> = []
+        targetWs.on('open', () => {
+          while (pendingQueue.length > 0) {
+            const p = pendingQueue.shift()!
+            targetWs.send(p.data, { binary: p.isBinary })
+          }
         })
 
         // 接受浏览器端的 WebSocket 升级
@@ -53,6 +68,8 @@ function wsProxyPlugin() {
           ws.on('message', (data: any, isBinary: boolean) => {
             if (targetWs.readyState === WebSocket.OPEN) {
               targetWs.send(data, { binary: isBinary })
+            } else {
+              pendingQueue.push({ data, isBinary })
             }
           })
           ws.on('close', () => safeClose(targetWs))
@@ -64,7 +81,10 @@ function wsProxyPlugin() {
               ws.send(data, { binary: isBinary })
             }
           })
-          targetWs.on('close', () => safeClose(ws))
+          targetWs.on('close', (code: number, reason: Buffer) => {
+            // 转发目标端关闭码，让浏览器端能检测 4001 等异常码
+            safeClose(ws, code, reason?.toString())
+          })
         })
       })
     },

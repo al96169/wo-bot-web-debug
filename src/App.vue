@@ -3,7 +3,7 @@ import { ref, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
-import { useWebSocket, getRemoteFeatures } from "@/composables/useWebSocket";
+import { useWebSocket, getRemoteFeatures, setOnVersionMismatch } from "@/composables/useWebSocket";
 import { useWebRTC } from "@/composables/useWebRTC";
 import { useMock } from "@/composables/useMock";
 import { useDiscovery } from "@/composables/useDiscovery";
@@ -26,6 +26,7 @@ import AddDeviceDialog from "@/components/dialogs/AddDeviceDialog.vue";
 import SwitchDeviceDialog from "@/components/dialogs/SwitchDeviceDialog.vue";
 import OpsConfirmDialog from "@/components/dialogs/OpsConfirmDialog.vue";
 import ConnectTimeoutDialog from "@/components/dialogs/ConnectTimeoutDialog.vue";
+import VersionMismatchDialog from "@/components/dialogs/VersionMismatchDialog.vue";
 import type { Device, ViewName } from "@/types";
 
 const appStore = useAppStore();
@@ -54,6 +55,12 @@ const showAddDevice = ref(false);
 const switchTarget = ref<Device | null>(null);
 const opsConfirm = ref<{ type: string; title: string; message: string } | null>(null);
 const connectTimeout = ref<{ message: string } | null>(null);
+const showVersionMismatch = ref(false);
+
+// 注册版本不匹配回调
+setOnVersionMismatch(() => {
+  showVersionMismatch.value = true;
+});
 
 // Mock 启动配置：URL ?mock 参数优先，其次 .env VITE_MOCK_DEFAULT
 const urlParams = new URLSearchParams(window.location.search);
@@ -291,6 +298,10 @@ const viewsMap: Record<ViewName, unknown> = {
       :message="connectTimeout.message"
       @close="handleTimeoutClose"
       @retry="handleRetryConnect"
+    />
+    <VersionMismatchDialog
+      v-if="showVersionMismatch"
+      @close="showVersionMismatch = false"
     />
 
     <!-- Toast -->

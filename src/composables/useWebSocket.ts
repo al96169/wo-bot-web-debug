@@ -8,13 +8,19 @@ import type { Module, Software } from "../types";
 /* ============================================================
  * wo-bot-web-debug - WebSocket + WebRTC 通信层
  *
- * WebSocket 承载: 设备发现握手 + WebRTC 信令 + 所有业务消息
+ * WebSocket 承载: 设备发现握手 + 协议版本协商 + WebRTC 信令 + 所有业务消息
  * WebRTC DataChannel: 优先级更高，就绪时使用；未就绪时 WebSocket 降级
  * ============================================================ */
+
+/** 当前客户端协议版本，与服务端兼容性检查中的 min_protocol_version 对应 */
+export const PROTOCOL_VERSION = 1;
 
 const CONNECT_TIMEOUT = 5000;
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT = 30; // WiFi 切换后可能需要更长时间恢复
+const MAX_INITIAL_RETRIES = 3; // 首次连接失败最多重试 3 次
+const HEARTBEAT_INTERVAL = 15000; // 心跳间隔 15s
+const HEARTBEAT_TIMEOUT = 5000; // 心跳超时 5s（无 pong 则认为断开）
 
 // ---- 模块级单例 ----
 let _ws: WebSocket | null = null;
@@ -26,10 +32,48 @@ let _token = "";
 /** 标记是否为主动断开，防止 onclose 触发无意义重连 */
 let _intentionalDisconnect = false;
 
+// ---- 心跳 ----
+let _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let _lastPongTime = 0; // 最后收到 pong 的时间戳
+
 /** 重连时触发 WebRTC 握手（由 App.vue 设置） */
 let _onReconnect: (() => void) | null = null;
 export function setOnReconnect(fn: (() => void) | null): void {
   _onReconnect = fn;
+}
+
+/** 版本不匹配回调（由 App.vue 设置，在收到 4001 关闭码时触发） */
+let _onVersionMismatch: (() => void) | null = null;
+export function setOnVersionMismatch(fn: (() => void) | null): void {
+  _onVersionMismatch = fn;
+}
+
+/** 握手是否已通过（收到 connected 消息为 true） */
+let _handshakeAccepted = false;
+
+/** 调试用：覆盖发送的协议版本（-1 = 使用 PROTOCOL_VERSION，>= 0 强制使用该值） */
+let _debugProtocolVersion = -1;
+
+// 从 URL 参数读取调试协议版本: ?debug_pv=N
+try {
+  const urlParams = new URLSearchParams(window.location.search);
+  const debugPv = urlParams.get("debug_pv");
+  if (debugPv !== null) {
+    const pv = parseInt(debugPv, 10);
+    if (!isNaN(pv)) {
+      _debugProtocolVersion = pv;
+      console.log("[WS] 调试模式: 协议版本覆盖为", pv);
+    }
+  }
+} catch {
+  // SSR / 无 window 环境忽略
+}
+
+export function setDebugProtocolVersion(v: number): void {
+  _debugProtocolVersion = v;
+}
+export function getDebugProtocolVersion(): number {
+  return _debugProtocolVersion;
 }
 
 /** 消息监听器（供组件订阅特定消息类型） */
@@ -147,18 +191,20 @@ export function useWebSocket() {
       disconnect();
     }
     _intentionalDisconnect = false;
+    _handshakeAccepted = false;
     appStore.connection = "connecting";
     _connectedIp = ip;
     _connectedPort = port;
     // 开发模式通过 Vite WebSocket 代理连接，绕过浏览器跨域/IP 限制
+    const pv = _debugProtocolVersion >= 0 ? _debugProtocolVersion : PROTOCOL_VERSION;
     let url: string;
     if (import.meta.env.DEV) {
-      url = `ws://${window.location.host}/api/device-ws?host=${encodeURIComponent(ip)}&port=${port}`;
+      url = `ws://${window.location.host}/api/device-ws?host=${encodeURIComponent(ip)}&port=${port}&protocol_version=${pv}`;
     } else {
-      url = `ws://${ip}:${port}`;
+      url = `ws://${ip}:${port}?protocol_version=${pv}`;
     }
     if (_token) {
-      url += `${import.meta.env.DEV ? "&" : "?"}token=${encodeURIComponent(_token)}`;
+      url += `&token=${encodeURIComponent(_token)}`;
     }
     console.log("[WS] connect() 创建 WebSocket:", url);
     const socket = new WebSocket(url);
@@ -182,10 +228,8 @@ export function useWebSocket() {
         clearTimeout(_connectTimer);
         _connectTimer = null;
       }
-      appStore.connection = "connected";
-      appStore.showToast("信令通道已建立", "success");
-      reconnectCount.value = 0;
-      robotStore.addLog("info", "Signaling", `信令已连接到 ${ip}:${port}`);
+      // 版本协商已通过 URL query 参数完成，等待服务端 connected 消息确认
+      // 不在此处设置 connected 状态，避免服务端因版本问题立即断开时的误报
       // 清空 WebSocket 待发送队列
       if (_pendingQueue.length > 0) {
         const q = _pendingQueue;
@@ -223,11 +267,22 @@ export function useWebSocket() {
         wasClean: event.wasClean,
         isActive: socket === _ws,
         intentionalDisconnect: _intentionalDisconnect,
+        handshakeAccepted: _handshakeAccepted,
       });
       // 只处理当前活跃 socket 的关闭事件，忽略已替换的旧 socket
       if (socket !== _ws) {
         console.log("[WS] onclose 忽略: 旧 socket (已被替换)");
         return;
+      }
+      stopHeartbeat();
+      // 服务端明确拒绝 (code >= 4000): 不重连
+      if (!_intentionalDisconnect && event.code >= 4000) {
+        console.log("[WS] 服务端拒绝连接, code:", event.code);
+        _intentionalDisconnect = true;
+        // 4001 是版本不匹配，弹窗提示
+        if (event.code === 4001) {
+          if (_onVersionMismatch) _onVersionMismatch();
+        }
       }
       appStore.connection = "disconnected";
       appStore.setSSHConnected(false);
@@ -244,7 +299,9 @@ export function useWebSocket() {
       readyState: _ws?.readyState,
     });
     _intentionalDisconnect = true;
+    _handshakeAccepted = false;
     _clearTimers();
+    stopHeartbeat();
     if (_ws) {
       _ws.close();
       _ws = null;
@@ -256,30 +313,69 @@ export function useWebSocket() {
     robotStore.addLog("info", "Signaling", "主动断开信令");
   }
 
+  // ---- 心跳 ----
+  function startHeartbeat(): void {
+    stopHeartbeat();
+    _lastPongTime = Date.now();
+    _heartbeatTimer = setInterval(() => {
+      // 检查 WebSocket 是否仍然存活
+      if (!_ws || _ws.readyState === WebSocket.CLOSED || _ws.readyState === WebSocket.CLOSING) {
+        console.warn("[WS] 心跳检测: WebSocket 已断开, readyState:", _ws?.readyState);
+        stopHeartbeat();
+        // 主动触发重连
+        if (_connectedIp && _connectedPort) {
+          robotStore.addLog("warn", "Signaling", "检测到连接断开，尝试重连...");
+          maybeReconnect(_connectedIp, _connectedPort);
+        }
+        return;
+      }
+      // 检查上次 pong 是否超时
+      if (Date.now() - _lastPongTime > HEARTBEAT_INTERVAL + HEARTBEAT_TIMEOUT) {
+        console.warn("[WS] 心跳超时: 无 pong 回应 >", HEARTBEAT_INTERVAL + HEARTBEAT_TIMEOUT, "ms");
+        robotStore.addLog("warn", "Signaling", "心跳超时，连接已断开");
+        // 关闭当前连接，onclose 会触发重连
+        _ws.close();
+        return;
+      }
+      _send({ type: "ping", data: { ts: Date.now() } });
+    }, HEARTBEAT_INTERVAL);
+  }
+
+  function stopHeartbeat(): void {
+    if (_heartbeatTimer) {
+      clearInterval(_heartbeatTimer);
+      _heartbeatTimer = null;
+    }
+  }
+
   function maybeReconnect(ip: string, port: number): void {
     console.log("[WS] maybeReconnect() 检查:", {
       ip,
       port,
       intentionalDisconnect: _intentionalDisconnect,
+      wasConnected: _handshakeAccepted,
       reconnectCount: reconnectCount.value,
       maxReconnect: MAX_RECONNECT,
       mockMode: appStore.mockMode,
     });
     if (_intentionalDisconnect) {
-      console.log("[WS] maybeReconnect() 跳过: 主动断开");
-      return;
-    }
-    if (reconnectCount.value >= MAX_RECONNECT) {
-      console.log("[WS] maybeReconnect() 跳过: 已达最大重连次数");
+      console.log("[WS] maybeReconnect() 跳过: 主动断开或服务端拒绝");
       return;
     }
     if (appStore.mockMode) {
       console.log("[WS] maybeReconnect() 跳过: Mock 模式");
       return;
     }
+    // 首次连接未成功过 (_handshakeAccepted=false): 最多重试 3 次
+    const maxRetries = _handshakeAccepted ? MAX_RECONNECT : MAX_INITIAL_RETRIES;
+    if (reconnectCount.value >= maxRetries) {
+      console.log("[WS] maybeReconnect() 跳过: 已达最大重连次数", reconnectCount.value, "/", maxRetries);
+      return;
+    }
     reconnectCount.value++;
-    console.log("[WS] maybeReconnect() 安排重连:", reconnectCount.value, "/", MAX_RECONNECT);
-    robotStore.addLog("info", "Signaling", `正在尝试重连 (${reconnectCount.value}/${MAX_RECONNECT})...`);
+    const strategy = _handshakeAccepted ? "保活" : "首次连接";
+    console.log("[WS] maybeReconnect() 安排重连 (", strategy, "):", reconnectCount.value, "/", maxRetries);
+    robotStore.addLog("info", "Signaling", `正在尝试重连 (${reconnectCount.value}/${maxRetries})...`);
     _reconnectTimer = setTimeout(() => connect(ip, port), RECONNECT_DELAY * reconnectCount.value);
   }
 
@@ -300,6 +396,11 @@ export function useWebSocket() {
     switch (msg.type) {
       // ---- 信令层 ----
       case "connected":
+        _handshakeAccepted = true;
+        appStore.connection = "connected";
+        appStore.showToast("信令通道已建立", "success");
+        reconnectCount.value = 0;
+        robotStore.addLog("info", "Signaling", `信令已连接到 ${_connectedIp}:${_connectedPort}`);
         devicesStore.setRobotInfo({
           robot_id: String(data.robot_id ?? ""),
           name: String(data.name ?? ""),
@@ -311,6 +412,16 @@ export function useWebSocket() {
         // 连接成功后自动订阅状态 + 获取摄像头列表
         _send({ type: "subscribe", data: { events: ["status"] } });
         requestCameraStatus();
+        // 清空 WebSocket 待发送队列
+        if (_pendingQueue.length > 0) {
+          const q = _pendingQueue;
+          _pendingQueue = [];
+          for (const p of q) _ws!.send(p);
+        }
+        // 自动重连时也触发 WebRTC 握手
+        if (_onReconnect) _onReconnect();
+        // 启动心跳
+        startHeartbeat();
         break;
       case "webrtc_answer":
         resolveWebRTCAnswer(String(data.sdp ?? ""));
@@ -365,7 +476,8 @@ export function useWebSocket() {
         break;
       }
       case "pong":
-        appStore._lastPing = Date.now();
+        _lastPongTime = Date.now();
+        appStore._lastPing = _lastPongTime;
         break;
       case "logs": {
         const logs = Array.isArray(data.logs) ? (data.logs as Array<Record<string, unknown>>) : [];
