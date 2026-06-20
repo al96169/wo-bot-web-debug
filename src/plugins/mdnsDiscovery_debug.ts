@@ -31,7 +31,7 @@ function mdnsDiscoveryPlugin(): Plugin {
         try {
           browser.stop();
           bonjour.destroy();
-        } catch (e) {}
+        } catch {}
 
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.end(JSON.stringify(all, null, 2));

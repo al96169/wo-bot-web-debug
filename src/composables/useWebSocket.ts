@@ -1,4 +1,4 @@
-import { ref, type Ref } from "vue";
+import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
@@ -207,7 +207,7 @@ export function useWebSocket() {
       }
     };
 
-    socket.onerror = (event: Event) => {
+    socket.onerror = (_event: Event) => {
       console.error("[WS] onerror 触发:", { ip, port, readyState: socket.readyState, isActive: socket === _ws });
       appStore.connection = "error";
       appStore.showToast(`连接失败: ${ip}:${port}`, "error");

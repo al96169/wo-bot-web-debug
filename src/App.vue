@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onUnmounted } from "vue";
+import { ref, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
@@ -32,7 +32,7 @@ const appStore = useAppStore();
 const devicesStore = useDevicesStore();
 const robotStore = useRobotStore();
 const { connect, disconnect, sendSystemAction } = useWebSocket();
-const { establishConnection: establishWebRTC, close: closeWebRTC, webrtcState } = useWebRTC();
+const { establishConnection: establishWebRTC, close: closeWebRTC } = useWebRTC();
 const { startMockMode, stopMockMode } = useMock();
 const { startScan: startDiscoveryScan } = useDiscovery();
 
@@ -65,12 +65,6 @@ if (shouldMock) {
   // 非 Mock 模式：延迟 1 秒后自动扫描局域网设备
   setTimeout(() => startDiscoveryScan(), 1000);
 }
-
-const connectionTooltip = computed(() => {
-  const device = devicesStore.currentDevice;
-  if (!device) return "";
-  return `设备: ${device.name}\nIP: ${device.ip}:${device.port}`;
-});
 
 // Theme class
 watch(

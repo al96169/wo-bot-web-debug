@@ -211,6 +211,7 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
         <div class="connection-status" :class="connectionStatusClass">
           <span class="status-dot"></span>
           <span class="status-text">{{ connectionText }}</span>
+          <!-- eslint-disable-next-line vue/no-v-html -->
           <div class="conn-tooltip" v-html="connectionTooltipHTML"></div>
         </div>
         <div v-show="robotStatusBarVisible" class="robot-status-bar">

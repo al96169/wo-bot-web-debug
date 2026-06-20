@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { computed } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useRobotStore } from "@/stores/robot";
 import { useWebSocket } from "@/composables/useWebSocket";
@@ -69,6 +69,7 @@ function handleVolumeChange(e: Event) {
   }, 300);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const volumeIcon = computed(() => {
   const v = appStore.volume;
   if (v === 0) return "🔇";

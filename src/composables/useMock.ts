@@ -48,6 +48,7 @@ export function useMock() {
 
   // 计数器
   let logCounter = 0;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let msgCounter = 0;
   let discoveryCounter = 0;
 

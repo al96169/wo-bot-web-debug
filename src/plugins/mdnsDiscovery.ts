@@ -82,7 +82,7 @@ function mdnsDiscoveryPlugin(): Plugin {
           try {
             browser.stop();
             bonjour.destroy();
-          } catch (e) {
+          } catch {
             // ignore cleanup errors
           }
 

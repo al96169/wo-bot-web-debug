@@ -13,8 +13,6 @@ const {
   sendEmergencyStop,
   sendEmergencyRelease,
   sendCamera,
-  sendGimbal,
-  sendGimbalMove,
   sendGimbalMoveBegin,
   sendGimbalMoveUpdate,
   sendGimbalMoveEnd,

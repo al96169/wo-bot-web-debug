@@ -63,7 +63,7 @@ export async function handleWebRTCIceCandidate(
           sdpMLineIndex: sdpMLineIndex ?? undefined,
         }),
       );
-    } catch (e) {
+    } catch {
       // ICE candidate 添加失败不阻塞（非致命）
     }
   }

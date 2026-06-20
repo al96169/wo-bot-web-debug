@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useRobotStore } from "@/stores/robot";
-import type { LogEntry } from "@/types";
 
 const robotStore = useRobotStore();
 
