@@ -1,5 +1,5 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
-import type { RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHashHistory } from "vue-router";
+import type { RouteRecordRaw } from "vue-router";
 
 /** 各视图路由。
  *  视图组件目前尚未实现，先以空壳占位，
@@ -7,59 +7,64 @@ import type { RouteRecordRaw } from 'vue-router'
  */
 const routes: RouteRecordRaw[] = [
   {
-    path: '/',
-    redirect: '/quick-actions',
+    path: "/",
+    redirect: "/quick-actions",
   },
   {
-    path: '/quick-actions',
-    name: 'quickActions',
-    component: () => import('../views/QuickActionsView.vue'),
+    path: "/quick-actions",
+    name: "quickActions",
+    component: () => import("../components/views/QuickActionsView.vue"),
   },
   {
-    path: '/logs',
-    name: 'logs',
-    component: () => import('../views/LogsView.vue'),
+    path: "/logs",
+    name: "logs",
+    component: () => import("../components/views/LogsView.vue"),
   },
   {
-    path: '/messages',
-    name: 'messages',
-    component: () => import('../views/MessagesView.vue'),
+    path: "/messages",
+    name: "messages",
+    component: () => import("../components/views/MessagesView.vue"),
   },
   {
-    path: '/status',
-    name: 'status',
-    component: () => import('../views/StatusView.vue'),
+    path: "/status",
+    name: "status",
+    component: () => import("../components/views/StatusView.vue"),
   },
   {
-    path: '/software',
-    name: 'software',
-    component: () => import('../views/SoftwareView.vue'),
+    path: "/software",
+    name: "software",
+    component: () => import("../components/views/SoftwareView.vue"),
   },
   {
-    path: '/remote',
-    name: 'remote',
-    component: () => import('../views/RemoteView.vue'),
+    path: "/remote",
+    name: "remote",
+    component: () => import("../components/views/RemoteView.vue"),
   },
   {
-    path: '/map',
-    name: 'map',
-    component: () => import('../views/MapView.vue'),
+    path: "/dance",
+    name: "dance",
+    component: () => import("../components/views/DanceView.vue"),
   },
   {
-    path: '/gallery',
-    name: 'gallery',
-    component: () => import('../views/GalleryView.vue'),
+    path: "/map",
+    name: "map",
+    component: () => import("../components/views/MapView.vue"),
   },
   {
-    path: '/settings',
-    name: 'settings',
-    component: () => import('../views/SettingsView.vue'),
+    path: "/gallery",
+    name: "gallery",
+    component: () => import("../components/views/GalleryView.vue"),
   },
-]
+  {
+    path: "/settings",
+    name: "settings",
+    component: () => import("../components/views/SettingsView.vue"),
+  },
+];
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes,
-})
+});
 
-export default router
+export default router;

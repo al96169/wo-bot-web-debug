@@ -1,5 +1,4 @@
-<script setup lang="ts">
-</script>
+<script setup lang="ts"></script>
 
 <template>
   <footer class="app-footer">
@@ -15,8 +14,16 @@
 
 <style scoped>
 .app-footer {
-  height: 28px; display: flex; align-items: center; justify-content: center;
-  gap: 8px; padding: 0 20px; background: var(--bg-tertiary);
-  border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 20px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 </style>

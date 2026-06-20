@@ -1,36 +1,36 @@
-import { defineStore } from 'pinia'
-import type { ConnectionStatus, ControlMode, Theme, ToggleKey, ViewName } from '../types'
+import { defineStore } from "pinia";
+import type { ConnectionStatus, ControlMode, Theme, ToggleKey, ViewName } from "../types";
 
 /* ============================================================
  * wo-bot-vue - 应用全局状态 (Pinia Store)
  * ============================================================ */
 
-function getEffectiveTheme(theme: Theme): 'dark' | 'light' {
-  if (theme === 'auto') {
-    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+function getEffectiveTheme(theme: Theme): "dark" | "light" {
+  if (theme === "auto") {
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   }
-  return theme
+  return theme;
 }
 
-export const useAppStore = defineStore('app', {
+export const useAppStore = defineStore("app", {
   state: () => ({
     /** 连接状态: disconnected | connecting | connected | error */
-    connection: 'disconnected' as ConnectionStatus,
+    connection: "disconnected" as ConnectionStatus,
 
     /** Mock 模式开关 */
     mockMode: false,
 
     /** 主题: dark | light | auto */
-    theme: 'dark' as Theme,
+    theme: "dark" as Theme,
 
     /** 当前激活视图 */
-    currentView: 'quickActions' as ViewName,
+    currentView: "quickActions" as ViewName,
 
     /** 侧边栏是否折叠 */
     sidebarCollapsed: false,
 
     /** 控制模式: manual | semi | auto */
-    controlMode: 'manual' as ControlMode,
+    controlMode: "manual" as ControlMode,
 
     /** 键盘控制是否启用 */
     keyboardEnabled: false,
@@ -52,7 +52,7 @@ export const useAppStore = defineStore('app', {
     bottomPanelExpanded: false,
 
     /** 底部面板当前标签 */
-    bottomPanelTab: 'cmdLog' as 'cmdLog' | 'ssh',
+    bottomPanelTab: "cmdLog" as "cmdLog" | "ssh",
 
     /** 音量 (0-100) */
     volume: 50,
@@ -61,78 +61,80 @@ export const useAppStore = defineStore('app', {
     scanning: false,
 
     /** Toast 提示 */
-    toast: null as { message: string; type: 'success' | 'error' | 'info'; id: number } | null,
+    toast: null as { message: string; type: "success" | "error" | "info"; id: number } | null,
   }),
 
   getters: {
     connectionClass(): string {
-      return this.connection
+      return this.connection;
     },
     connectionText(): string {
       const map: Record<string, string> = {
-        disconnected: '未连接',
-        connecting: '连接中...',
-        connected: '已连接',
-        error: '连接错误',
-      }
-      return map[this.connection] || '未连接'
+        disconnected: "未连接",
+        connecting: "连接中...",
+        connected: "已连接",
+        error: "连接错误",
+      };
+      return map[this.connection] || "未连接";
     },
     isDark(state): boolean {
-      return state.theme === 'dark' || (state.theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      return (
+        state.theme === "dark" || (state.theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+      );
     },
   },
 
   actions: {
     /** Toast 提示（自动 3 秒消失） */
-    showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
-      const id = Date.now()
-      this.toast = { message, type, id }
+    showToast(message: string, type: "success" | "error" | "info" = "info") {
+      const id = Date.now();
+      this.toast = { message, type, id };
       setTimeout(() => {
-        if (this.toast?.id === id) this.toast = null
-      }, 3000)
+        if (this.toast?.id === id) this.toast = null;
+      }, 3000);
     },
 
     /** Switch current view */
     setView(view: ViewName) {
-      this.currentView = view
+      this.currentView = view;
     },
 
     /** Toggle a boolean action (flashlight/mute/eco) */
     toggleAction(key: ToggleKey) {
-      this.toggleStates[key] = !this.toggleStates[key]
-      this.saveSettings()
+      this.toggleStates[key] = !this.toggleStates[key];
+      this.saveSettings();
     },
 
     /** Set control mode */
     setControlMode(mode: ControlMode) {
-      this.controlMode = mode
-      this.saveSettings()
+      this.controlMode = mode;
+      this.saveSettings();
     },
 
     /** Set volume */
     setVolume(v: number) {
-      this.volume = Math.max(0, Math.min(100, v))
+      this.volume = Math.max(0, Math.min(100, v));
     },
 
     /** Set theme */
     setTheme(theme: Theme) {
-      this.theme = theme
-      this.applyTheme()
+      this.theme = theme;
+      this.applyTheme();
     },
 
     /** Set bottom panel tab */
-    setBottomPanelTab(tab: 'cmdLog' | 'ssh') {
-      this.bottomPanelTab = tab
+    setBottomPanelTab(tab: "cmdLog" | "ssh") {
+      this.bottomPanelTab = tab;
     },
 
     /** Toggle bottom panel expand/collapse */
     toggleBottomPanel() {
-      this.bottomPanelExpanded = !this.bottomPanelExpanded
+      this.bottomPanelExpanded = !this.bottomPanelExpanded;
     },
 
     /** Set SSH connected state */
     setSSHConnected(val: boolean) {
-      this.sshConnected = val
+      this.sshConnected = val;
     },
 
     /* ---- 持久化 ---- */
@@ -140,19 +142,19 @@ export const useAppStore = defineStore('app', {
     /** 从 localStorage 加载设置 */
     loadSettings(): void {
       try {
-        const raw = localStorage.getItem('wobot_debug_settings')
-        if (!raw) return
-        const data = JSON.parse(raw)
-        if (data.theme) this.theme = data.theme as Theme
-        if (data.mockMode !== undefined) this.mockMode = Boolean(data.mockMode)
-        if (data.sidebarCollapsed !== undefined) this.sidebarCollapsed = Boolean(data.sidebarCollapsed)
-        if (data.controlMode) this.controlMode = data.controlMode as ControlMode
-        if (data.keyboardEnabled !== undefined) this.keyboardEnabled = Boolean(data.keyboardEnabled)
-        if (data.volume !== undefined) this.volume = Number(data.volume)
+        const raw = localStorage.getItem("wobot_debug_settings");
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (data.theme) this.theme = data.theme as Theme;
+        if (data.mockMode !== undefined) this.mockMode = Boolean(data.mockMode);
+        if (data.sidebarCollapsed !== undefined) this.sidebarCollapsed = Boolean(data.sidebarCollapsed);
+        if (data.controlMode) this.controlMode = data.controlMode as ControlMode;
+        if (data.keyboardEnabled !== undefined) this.keyboardEnabled = Boolean(data.keyboardEnabled);
+        if (data.volume !== undefined) this.volume = Number(data.volume);
         if (data.toggleStates) {
-          const t = data.toggleStates as Partial<Record<ToggleKey, boolean>>
-          for (const k of ['flashlight', 'mute', 'eco'] as ToggleKey[]) {
-            if (t[k] !== undefined) this.toggleStates[k] = Boolean(t[k])
+          const t = data.toggleStates as Partial<Record<ToggleKey, boolean>>;
+          for (const k of ["flashlight", "mute", "eco"] as ToggleKey[]) {
+            if (t[k] !== undefined) this.toggleStates[k] = Boolean(t[k]);
           }
         }
       } catch {
@@ -170,26 +172,26 @@ export const useAppStore = defineStore('app', {
         keyboardEnabled: this.keyboardEnabled,
         volume: this.volume,
         toggleStates: { ...this.toggleStates },
-      }
-      localStorage.setItem('wobot_debug_settings', JSON.stringify(payload))
+      };
+      localStorage.setItem("wobot_debug_settings", JSON.stringify(payload));
     },
 
     /* ---- 主题 ---- */
 
     /** 应用主题到 document */
     applyTheme(): void {
-      const effective = getEffectiveTheme(this.theme)
-      document.documentElement.setAttribute('data-theme', effective)
+      const effective = getEffectiveTheme(this.theme);
+      document.documentElement.setAttribute("data-theme", effective);
       // 同步到 localStorage
-      this.saveSettings()
+      this.saveSettings();
     },
 
     /** 切换主题（轮转 dark -> light -> auto -> dark） */
     toggleTheme(): void {
-      const order: Theme[] = ['dark', 'light', 'auto']
-      const idx = order.indexOf(this.theme)
-      this.theme = order[(idx + 1) % order.length]
-      this.applyTheme()
+      const order: Theme[] = ["dark", "light", "auto"];
+      const idx = order.indexOf(this.theme);
+      this.theme = order[(idx + 1) % order.length];
+      this.applyTheme();
     },
   },
-})
+});
