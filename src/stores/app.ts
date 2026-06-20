@@ -62,6 +62,9 @@ export const useAppStore = defineStore("app", {
 
     /** Toast 提示 */
     toast: null as { message: string; type: "success" | "error" | "info"; id: number } | null,
+
+    /** Debug 模式：开启后在浏览器控制台输出调试日志 */
+    debugMode: false,
   }),
 
   getters: {
@@ -89,6 +92,10 @@ export const useAppStore = defineStore("app", {
     showToast(message: string, type: "success" | "error" | "info" = "info") {
       const id = Date.now();
       this.toast = { message, type, id };
+      // 错误类型的 Toast 同步输出到浏览器控制台
+      if (type === "error") {
+        console.error(`[Toast:error] ${message}`);
+      }
       setTimeout(() => {
         if (this.toast?.id === id) this.toast = null;
       }, 3000);
@@ -151,6 +158,7 @@ export const useAppStore = defineStore("app", {
         if (data.controlMode) this.controlMode = data.controlMode as ControlMode;
         if (data.keyboardEnabled !== undefined) this.keyboardEnabled = Boolean(data.keyboardEnabled);
         if (data.volume !== undefined) this.volume = Number(data.volume);
+        if (data.debugMode !== undefined) this.debugMode = Boolean(data.debugMode);
         if (data.toggleStates) {
           const t = data.toggleStates as Partial<Record<ToggleKey, boolean>>;
           for (const k of ["flashlight", "mute", "eco"] as ToggleKey[]) {
@@ -171,6 +179,7 @@ export const useAppStore = defineStore("app", {
         controlMode: this.controlMode,
         keyboardEnabled: this.keyboardEnabled,
         volume: this.volume,
+        debugMode: this.debugMode,
         toggleStates: { ...this.toggleStates },
       };
       localStorage.setItem("wobot_debug_settings", JSON.stringify(payload));

@@ -158,14 +158,23 @@ h2 {
 .message-item-subject {
   font-weight: 600;
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  margin-right: 8px;
 }
 .message-item-time {
   font-size: 11px;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 .message-item-summary {
   font-size: 12px;
   color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .empty-state {
   text-align: center;

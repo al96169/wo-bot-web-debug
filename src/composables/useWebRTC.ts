@@ -54,18 +54,33 @@ export async function handleWebRTCIceCandidate(
   sdpMid: string | null,
   sdpMLineIndex: number | null,
 ): Promise<void> {
-  if (_pc && candidate) {
-    try {
-      await _pc.addIceCandidate(
-        new RTCIceCandidate({
-          candidate,
-          sdpMid: sdpMid ?? undefined,
-          sdpMLineIndex: sdpMLineIndex ?? undefined,
-        }),
-      );
-    } catch {
-      // ICE candidate 添加失败不阻塞（非致命）
-    }
+  console.log("[WebRTC:ICE] 收到远端 ICE candidate:", {
+    hasPc: !!_pc,
+    pcSignalingState: _pc?.signalingState,
+    pcConnectionState: _pc?.connectionState,
+    candidate: candidate?.substring(0, 80),
+    sdpMid,
+    sdpMLineIndex,
+  });
+  if (!_pc) {
+    console.warn("[WebRTC:ICE] _pc 为 null, 丢弃 ICE candidate（信令到达时 PC 尚未创建或已销毁）");
+    return;
+  }
+  if (!candidate) {
+    console.warn("[WebRTC:ICE] candidate 为空, 跳过");
+    return;
+  }
+  try {
+    await _pc.addIceCandidate(
+      new RTCIceCandidate({
+        candidate,
+        sdpMid: sdpMid ?? undefined,
+        sdpMLineIndex: sdpMLineIndex ?? undefined,
+      }),
+    );
+    console.log("[WebRTC:ICE] addIceCandidate 成功");
+  } catch (e) {
+    console.error("[WebRTC:ICE] addIceCandidate 失败:", e);
   }
 }
 
@@ -108,6 +123,8 @@ export function useWebRTC() {
 
     // 清理旧状态，防止多次调用导致的竞态
     _clearPending();
+    videoStream0.value = null;
+    videoStream1.value = null;
     if (pc.value) {
       pc.value.close();
       pc.value = null;
@@ -203,34 +220,23 @@ export function useWebRTC() {
         const err = (event as RTCErrorEvent).error;
         const detail = err ? `${err.message ?? err.errorDetail ?? "unknown"}` : "无详情";
         robotStore.addLog("error", "WebRTC", `DataChannel 错误: ${detail}`);
+        console.error(`[WebRTC:DataChannel] 错误: ${detail}`);
       };
 
       // 接收远端视频流（双摄像头）
       // 关键：使用 event.streams[0]（浏览器引擎创建），不是 new MediaStream（Android 兼容）
+      // 简单计数器模式：第一个 track → cam0，第二个 → cam1
+      let _ontrackCount = 0;
+
       peerConnection.ontrack = (event: RTCTrackEvent) => {
+        _ontrackCount++;
         const resolvedStream = event.streams?.[0] || new MediaStream([event.track]);
-        console.log("[WebRTC] ontrack:", event.track.id, "streams:", event.streams?.length ?? 0);
+        console.log("[WebRTC] ontrack #" + _ontrackCount, "track:", event.track.id, "kind:", event.track.kind, "streams:", event.streams?.length ?? 0);
 
-        // 智能复用：热替换已 ended 的 stream slot
-        for (const item of [
-          { ref: videoStream0, label: "摄像头 0" },
-          { ref: videoStream1, label: "摄像头 1" },
-        ]) {
-          const ms = item.ref.value;
-          if (!ms) continue;
-          const liveTracks = ms.getVideoTracks().filter((t) => t.readyState === "live");
-          if (liveTracks.length === 0) {
-            item.ref.value = resolvedStream;
-            robotStore.addLog("info", "WebRTC", `${item.label} 视频轨已更新`);
-            return;
-          }
-        }
-
-        // 按顺序填充空槽位
-        if (!videoStream0.value) {
+        if (_ontrackCount === 1) {
           videoStream0.value = resolvedStream;
           robotStore.addLog("info", "WebRTC", "收到摄像头 0 视频流");
-        } else if (!videoStream1.value) {
+        } else {
           videoStream1.value = resolvedStream;
           robotStore.addLog("info", "WebRTC", "收到摄像头 1 视频流");
         }
@@ -238,23 +244,29 @@ export function useWebRTC() {
 
       // ICE candidate → 通过信令发送
       peerConnection.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
-        if (event.candidate && ws.readyState === WebSocket.OPEN) {
-          ws.send(
-            JSON.stringify({
-              type: "webrtc_ice_candidate",
-              data: {
-                candidate: event.candidate.candidate,
-                sdpMid: event.candidate.sdpMid,
-                sdpMLineIndex: event.candidate.sdpMLineIndex,
-              },
-            }),
-          );
+        if (event.candidate) {
+          console.log("[WebRTC:ICE] 本地 ICE candidate:", event.candidate.candidate?.substring(0, 80), "ws ready:", ws.readyState);
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(
+              JSON.stringify({
+                type: "webrtc_ice_candidate",
+                data: {
+                  candidate: event.candidate.candidate,
+                  sdpMid: event.candidate.sdpMid,
+                  sdpMLineIndex: event.candidate.sdpMLineIndex,
+                },
+              }),
+            );
+          }
+        } else {
+          console.log("[WebRTC:ICE] ICE candidate gathering complete (null candidate)");
         }
       };
 
       peerConnection.onconnectionstatechange = () => {
         if (pc.value !== peerConnection) return; // 不是当前活跃的 PC
         const state = peerConnection.connectionState;
+        console.log("[WebRTC] connectionState ->", state, "iceState:", peerConnection.iceConnectionState, "signalingState:", peerConnection.signalingState);
         robotStore.addLog("info", "WebRTC", `连接状态: ${state}`);
         if (state === "connected") {
           webrtcState.value = "connected";
@@ -463,7 +475,9 @@ export function useWebRTC() {
       pc.value = null;
     }
     _pc = null;
-    // 不置空 videoStream: 移动端视频管线重置后 srcObject→null 会导致后续播放失败
+    // 重连时清空旧视频流引用，否则 ontrack 会认为槽位已占用，拒绝接收新流
+    videoStream0.value = null;
+    videoStream1.value = null;
     setDataChannel(null);
     webrtcState.value = "idle";
     robotStore.addLog("info", "WebRTC", "WebRTC 连接已关闭");

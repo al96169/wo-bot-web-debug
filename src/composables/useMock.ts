@@ -136,6 +136,9 @@ export function useMock() {
   }
 
   function stopMockMode(): void {
+    // 如果当前不在 Mock 模式，跳过清理（防止误清空 real 连接的状态）
+    if (!appStore.mockMode) return;
+
     appStore.connection = "disconnected";
     appStore.mockMode = false;
 

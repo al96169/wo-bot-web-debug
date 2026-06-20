@@ -236,8 +236,6 @@ export function useWebSocket() {
         _pendingQueue = [];
         for (const p of q) socket.send(p);
       }
-      // 自动重连时也触发 WebRTC 握手
-      if (_onReconnect) _onReconnect();
     };
 
     socket.onmessage = (event: MessageEvent) => {
@@ -427,6 +425,11 @@ export function useWebSocket() {
         resolveWebRTCAnswer(String(data.sdp ?? ""));
         break;
       case "webrtc_ice_candidate":
+        console.log("[WS] 转发 ICE candidate", {
+          candidate: (data.candidate as string)?.substring(0, 60),
+          sdpMid: data.sdpMid,
+          sdpMLineIndex: data.sdpMLineIndex,
+        });
         handleWebRTCIceCandidate(
           String(data.candidate ?? ""),
           data.sdpMid != null ? String(data.sdpMid) : null,
@@ -570,6 +573,7 @@ export function useWebSocket() {
       case "error":
         appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error");
         robotStore.addLog("error", "Signaling", String(data.message ?? ""));
+        console.error(`[Signaling:error] ${String(data.message ?? "未知错误")}`);
         break;
 
       // ---- WiFi 管理 ----

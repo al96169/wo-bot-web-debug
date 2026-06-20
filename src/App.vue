@@ -3,7 +3,7 @@ import { ref, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
-import { useWebSocket, getRemoteFeatures, setOnVersionMismatch } from "@/composables/useWebSocket";
+import { useWebSocket, getRemoteFeatures, setOnVersionMismatch, setOnReconnect } from "@/composables/useWebSocket";
 import { useWebRTC } from "@/composables/useWebRTC";
 import { useMock } from "@/composables/useMock";
 import { useDiscovery } from "@/composables/useDiscovery";
@@ -33,22 +33,59 @@ const appStore = useAppStore();
 const devicesStore = useDevicesStore();
 const robotStore = useRobotStore();
 const { connect, disconnect, sendSystemAction } = useWebSocket();
-const { establishConnection: establishWebRTC, close: closeWebRTC } = useWebRTC();
+const { establishConnection: establishWebRTC, close: closeWebRTC, webrtcState } = useWebRTC();
 const { startMockMode, stopMockMode } = useMock();
 const { startScan: startDiscoveryScan } = useDiscovery();
 
-// WebSocket 信令连通后 2 秒建立 WebRTC
+// WebSocket "connected" 消息到达后立即建立 WebRTC
 let _webrtcTimer: ReturnType<typeof setTimeout> | null = null;
+let _webrtcEstablishing = false;
+
 function scheduleWebRTC(): void {
-  console.log("[App] scheduleWebRTC() called");
   if (_webrtcTimer) clearTimeout(_webrtcTimer);
   _webrtcTimer = setTimeout(() => {
     _webrtcTimer = null;
+    if (_webrtcEstablishing) return;
+
     const features = getRemoteFeatures();
+    // 如果 features 尚未就绪（connected 消息还没到），延迟再试（最多 10 次）
+    if (features.length === 0) {
+      _scheduleRetries = (_scheduleRetries || 0) + 1;
+      if (_scheduleRetries < 10) {
+        console.log("[App] scheduleWebRTC: features 为空，500ms 后重试");
+        scheduleWebRTC();
+        return;
+      }
+      console.warn("[App] scheduleWebRTC: features 始终为空，放弃建立 WebRTC");
+      appStore.showToast("WebRTC 无法建立：未收到服务端 capabilities", "error");
+      return;
+    }
+    _scheduleRetries = 0;
+    _webrtcEstablishing = true;
     console.log("[App] scheduleWebRTC firing, features:", features);
-    establishWebRTC();
-  }, 2000);
+    // 启动超时检测
+    const failTimer = setTimeout(() => {
+      if (webrtcState.value !== "connected") {
+        console.warn("[App] WebRTC 建立超时 (15s)");
+        appStore.showToast("WebRTC 连接未建立，摄像头/云台可能不可用", "error");
+      }
+    }, 15000);
+    const stopWatch = watch(webrtcState, (state) => {
+      if (state === "connected" || state === "failed") {
+        clearTimeout(failTimer);
+        stopWatch();
+        if (state === "failed") {
+          appStore.showToast("WebRTC 连接失败，摄像头/云台不可用", "error");
+        }
+      }
+    });
+    establishWebRTC().finally(() => {
+      _webrtcEstablishing = false;
+    });
+  }, 500);
 }
+
+let _scheduleRetries = 0;
 
 // Dialog states
 const showAddDevice = ref(false);
@@ -61,6 +98,47 @@ const showVersionMismatch = ref(false);
 setOnVersionMismatch(() => {
   showVersionMismatch.value = true;
 });
+
+// 注册 WebSocket 连接成功回调：收到 "connected" 消息后立即建立 WebRTC
+// 此时 _remoteFeatures 已由 connected handler 填充，可直接使用
+setOnReconnect(() => {
+  console.log("[App] onReconnect: connected 消息到达, 直接建立 WebRTC");
+  // 取消 connectDirectly 中的冗余调度
+  if (_webrtcTimer) {
+    clearTimeout(_webrtcTimer);
+    _webrtcTimer = null;
+  }
+  if (_webrtcEstablishing) {
+    console.log("[App] onReconnect: WebRTC 已在建立中，跳过");
+    return;
+  }
+  _webrtcEstablishing = true;
+  // 启动 WebRTC 建立超时检测：15 秒内未 connected 则弹窗提示
+  const failTimer = setTimeout(() => {
+    if (webrtcState.value !== "connected") {
+      console.warn("[App] WebRTC 建立超时 (15s), 当前状态:", webrtcState.value);
+      appStore.showToast("WebRTC 连接未建立，摄像头/云台可能不可用，请尝试断开后重连", "error");
+    }
+  }, 15000);
+  establishWebRTC().finally(() => {
+    _webrtcEstablishing = false;
+  });
+  // connected 后清除超时 timer
+  const stopWatch = watch(webrtcState, (state) => {
+    if (state === "connected") {
+      clearTimeout(failTimer);
+      stopWatch();
+    } else if (state === "failed") {
+      clearTimeout(failTimer);
+      stopWatch();
+      appStore.showToast("WebRTC 连接失败，摄像头/云台不可用", "error");
+    }
+  });
+});
+
+// 加载持久化设置和设备列表
+appStore.loadSettings();
+devicesStore.loadDevices();
 
 // Mock 启动配置：URL ?mock 参数优先，其次 .env VITE_MOCK_DEFAULT
 const urlParams = new URLSearchParams(window.location.search);
@@ -85,23 +163,33 @@ watch(
 // Handle sidebar device select
 function handleSelectDevice(device: Device) {
   const sameDevice = (a: Device, b: Device) => a.id === b.id || (a.ip === b.ip && a.port === b.port);
+  let cd = devicesStore.currentDevice;
+
+  // 核心修复：已点击设备匹配 currentDevice（ip:port 相同），自动同步 id
+  if (cd && sameDevice(cd, device) && cd.id !== device.id) {
+    console.log("[App] currentDevice ID 不匹配，自动同步:", cd.id, "->", device.id);
+    devicesStore.setCurrentDevice(device);
+    // 重新获取最新的 currentDevice 引用，确保后续判断准确
+    cd = devicesStore.currentDevice;
+  }
+
   console.log("[App] handleSelectDevice:", {
     name: device.name,
     ip: device.ip,
     port: device.port,
-    hasCurrentDevice: !!devicesStore.currentDevice,
-    isSame: devicesStore.currentDevice ? sameDevice(devicesStore.currentDevice, device) : "N/A",
+    hasCurrentDevice: !!cd,
+    isSame: cd ? sameDevice(cd, device) : "N/A",
     connection: appStore.connection,
   });
-  if (!devicesStore.currentDevice) {
+  if (!cd) {
     console.log("[App] 无当前设备 -> connectDirectly");
     connectDirectly(device);
-  } else if (!sameDevice(devicesStore.currentDevice, device)) {
+  } else if (!sameDevice(cd, device)) {
     console.log("[App] 不同设备 -> 弹出切换确认");
     switchTarget.value = device;
   } else if (appStore.connection === "connected") {
     console.log("[App] 同一设备已连接, 显示 Toast");
-    appStore.showToast("当前设备已连接", "info");
+    appStore.showToast("已连接该设备", "info");
   } else if (appStore.connection === "connecting") {
     console.log("[App] 同一设备连接中, 显示 Toast");
     appStore.showToast("正在连接中...", "info");
@@ -118,7 +206,20 @@ function connectDirectly(device: Device) {
     port: device.port,
     mockMode: appStore.mockMode,
   });
-  devicesStore.setCurrentDevice(device);
+
+  // 如果设备来自发现列表，先将其移到已保存设备列表，然后用新设备作为 currentDevice
+  const discoveredIdx = devicesStore.discovered.findIndex(
+    (d) => d.ip === device.ip && d.port === device.port && d.id === device.id,
+  );
+  let targetDevice = device;
+  if (discoveredIdx !== -1) {
+    console.log("[App] 将发现设备移到已保存列表:", device.name);
+    const newDevice = devicesStore.importDiscovered(device.id);
+    if (newDevice) {
+      targetDevice = newDevice;
+    }
+  }
+  devicesStore.setCurrentDevice(targetDevice);
 
   // Mock mode: skip WebSocket, just switch to this device
   if (appStore.mockMode) {
@@ -128,13 +229,15 @@ function connectDirectly(device: Device) {
     return;
   }
 
-  appStore.mockMode = false;
+  // 确保关闭 Mock 模式
   stopMockMode();
+  appStore.mockMode = false;
   try {
     console.log("[App] 清理 WebRTC, 发起 WebSocket 连接");
     closeWebRTC(); // 先清理旧 WebRTC 状态
     connect(device.ip, device.port);
-    // 2 秒后建立 WebRTC（等 connected 消息到达）
+    // scheduleWebRTC 由 _onReconnect 在收到 connected 消息后调度
+    // 此处也调度作为保险（setTimeout 确保 _remoteFeatures 已填充）
     scheduleWebRTC();
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);
@@ -197,7 +300,23 @@ function handleOpsAction(payload: { type: string }) {
   const action = actions[payload.type];
   if (action) {
     opsConfirm.value = { ...action, type: payload.type };
+    return;
   }
+  // 断开连接无需确认
+  if (payload.type === "disconnect") {
+    handleDisconnect();
+  }
+}
+
+function handleDisconnect() {
+  console.log("[App] 主动断开连接");
+  closeWebRTC();
+  disconnect();
+  devicesStore.setCurrentDevice(null);
+  appStore.connection = "disconnected";
+  appStore.setSSHConnected(false);
+  appStore.showToast("连接已断开", "info");
+  robotStore.addLog("info", "连接", "主动断开连接");
 }
 
 function handleOpsConfirm() {

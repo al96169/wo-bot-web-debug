@@ -158,6 +158,8 @@ function exportLogs() {
   border-bottom: 1px solid var(--border);
   font-size: 12px;
   line-height: 1.5;
+  word-break: break-all;
+  overflow-wrap: break-word;
 }
 .log-entry:last-child {
   border-bottom: none;

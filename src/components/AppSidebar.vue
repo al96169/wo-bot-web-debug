@@ -39,23 +39,32 @@ function isCurrentDevice(device: Device): boolean {
 }
 
 function handleDeviceClick(device: Device) {
+  const cd = devicesStore.currentDevice;
+  // 核心修复：已点击的设备如果和 currentDevice 匹配（ip:port 相同），
+  // 则把 currentDevice 指向该设备（解决 id 不一致导致 active 不显示的问题）
+  if (cd && isSameDevice(cd, device) && cd.id !== device.id) {
+    console.log("[Sidebar] currentDevice ID 不匹配，自动同步:", cd.id, "->", device.id);
+    devicesStore.setCurrentDevice(device);
+  }
+
   console.log("[Sidebar] 点击设备:", {
     name: device.name,
     ip: device.ip,
     port: device.port,
-    hasCurrentDevice: !!devicesStore.currentDevice,
-    isSame: devicesStore.currentDevice ? isSameDevice(devicesStore.currentDevice, device) : "N/A",
+    hasCurrentDevice: !!cd,
+    isSame: cd ? isSameDevice(cd, device) : "N/A",
     connection: appStore.connection,
   });
-  if (!devicesStore.currentDevice) {
+
+  if (!cd) {
     console.log("[Sidebar] 无当前设备, 发起连接");
     emit("selectDevice", device);
-  } else if (!isSameDevice(devicesStore.currentDevice, device)) {
+  } else if (!isSameDevice(cd, device)) {
     console.log("[Sidebar] 不同设备, 发起切换");
     emit("selectDevice", device);
   } else if (appStore.connection === "connected") {
     console.log("[Sidebar] 同一设备已连接, 显示 Toast");
-    appStore.showToast("当前设备已连接", "info");
+    appStore.showToast("已连接该设备", "info");
   } else if (appStore.connection === "connecting") {
     console.log("[Sidebar] 同一设备连接中, 显示 Toast");
     appStore.showToast("正在连接中...", "info");
@@ -261,6 +270,10 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
 .device-name {
   font-weight: 600;
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
 }
 .device-badge {
   font-size: 10px;
@@ -268,12 +281,16 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
   border-radius: var(--radius-sm);
   background: rgba(0, 212, 255, 0.2);
   color: var(--accent);
+  flex-shrink: 0;
 }
 .device-ip {
   font-size: 11px;
   color: var(--text-muted);
   font-family: monospace;
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .device-status-line {
   font-size: 11px;

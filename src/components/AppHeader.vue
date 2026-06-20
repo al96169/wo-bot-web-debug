@@ -15,6 +15,9 @@ const emit = defineEmits<{
 
 const opsMenuOpen = ref(false);
 
+const isConnected = computed(() => appStore.connection === "connected");
+const hasDeviceSelected = computed(() => !!devicesStore.currentDevice);
+
 const robotName = computed(() => {
   if (devicesStore.robotInfo?.name) return devicesStore.robotInfo.name;
   if (devicesStore.currentDevice?.name) return devicesStore.currentDevice.name;
@@ -23,7 +26,7 @@ const robotName = computed(() => {
 
 const connectionStatusClass = computed(() => appStore.connectionClass);
 const connectionText = computed(() => appStore.connectionText);
-const robotStatusBarVisible = computed(() => appStore.connection === "connected" || !!devicesStore.currentDevice);
+const robotStatusBarVisible = computed(() => isConnected.value);
 
 const wifiStatus = computed(() => {
   if (appStore.connection !== "connected") return "--";
@@ -255,7 +258,7 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
             </svg>
           </button>
           <div class="ops-menu-dropdown" :class="{ show: opsMenuOpen }">
-            <button class="ops-menu-item" @click="handleOpsAction('reboot')">
+            <button v-if="isConnected" class="ops-menu-item" @click="handleOpsAction('reboot')">
               <svg viewBox="0 0 24 24" width="16" height="16">
                 <path
                   fill="currentColor"
@@ -264,7 +267,7 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
               </svg>
               重启机器人
             </button>
-            <button class="ops-menu-item" @click="handleOpsAction('shutdown')">
+            <button v-if="isConnected" class="ops-menu-item" @click="handleOpsAction('shutdown')">
               <svg viewBox="0 0 24 24" width="16" height="16">
                 <path
                   fill="currentColor"
@@ -273,7 +276,7 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
               </svg>
               关机
             </button>
-            <button class="ops-menu-item" @click="handleOpsAction('forget')">
+            <button v-if="hasDeviceSelected" class="ops-menu-item" @click="handleOpsAction('forget')">
               <svg viewBox="0 0 24 24" width="16" height="16">
                 <path
                   fill="currentColor"
@@ -282,19 +285,39 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
               </svg>
               忘记此设备
             </button>
+            <div v-if="isConnected && hasDeviceSelected" class="ops-menu-divider"></div>
+            <button v-if="isConnected" class="ops-menu-item ops-menu-disconnect" @click="handleOpsAction('disconnect')">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path
+                  fill="currentColor"
+                  d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"
+                />
+              </svg>
+              断开连接
+            </button>
+            <div v-if="!isConnected && !hasDeviceSelected" class="ops-menu-empty">无可用操作</div>
           </div>
         </div>
-        <button class="icon-btn" title="切换主题" @click="appStore.toggleTheme()">
-          <svg viewBox="0 0 24 24" width="18" height="18">
+        <button class="icon-btn" title="切换主题 ({{ appStore.theme === 'auto' ? '跟随系统' : appStore.theme === 'dark' ? '深色' : '明亮' }})" @click="appStore.toggleTheme()">
+          <!-- 跟随系统 -->
+          <svg v-if="appStore.theme === 'auto'" viewBox="0 0 24 24" width="18" height="18">
             <path
-              v-if="appStore.theme === 'dark'"
               fill="currentColor"
-              d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"
+              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9c.83 0 1.5-.67 1.5-1.5S7.83 8 7 8s-1.5.67-1.5 1.5S6.17 11 7 11zm3-4c.83 0 1.5-.67 1.5-1.5S10.83 4 10 4s-1.5.67-1.5 1.5S9.17 7 10 7zm5 0c.83 0 1.5-.67 1.5-1.5S15.83 4 15 4s-1.5.67-1.5 1.5S14.17 7 15 7zm3 4c.83 0 1.5-.67 1.5-1.5S18.83 8 18 8s-1.5.67-1.5 1.5S17.17 11 18 11zM7 14c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
             />
+          </svg>
+          <!-- 深色模式: 月亮图标 -->
+          <svg v-else-if="appStore.theme === 'dark'" viewBox="0 0 24 24" width="18" height="18">
             <path
-              v-else
               fill="currentColor"
               d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-3.03 0-5.5-2.47-5.5-5.5 0-1.82.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"
+            />
+          </svg>
+          <!-- 明亮模式: 太阳图标 -->
+          <svg v-else viewBox="0 0 24 24" width="18" height="18">
+            <path
+              fill="currentColor"
+              d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"
             />
           </svg>
         </button>
@@ -369,6 +392,10 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
 }
 .robot-name {
   font-weight: 600;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .header-center {
   display: flex;
@@ -526,6 +553,23 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
 }
 .ops-menu-item.danger {
   color: var(--danger);
+}
+.ops-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.ops-menu-disconnect {
+  color: var(--warning);
+}
+.ops-menu-disconnect:hover {
+  background: rgba(255, 193, 7, 0.1);
+}
+.ops-menu-empty {
+  padding: 10px 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
 }
 .header-nav {
   display: flex;

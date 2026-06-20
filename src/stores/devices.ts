@@ -95,7 +95,7 @@ export const useDevicesStore = defineStore("devices", {
         if (!raw) return;
         const data = JSON.parse(raw);
         if (Array.isArray(data.devices)) this.devices = data.devices;
-        if (data.currentDevice) this.currentDevice = data.currentDevice;
+        // 不恢复 currentDevice：连接是运行时状态，刷新页面后必定断开
       } catch {
         // 忽略格式错误
       }
@@ -133,9 +133,19 @@ export const useDevicesStore = defineStore("devices", {
       this.saveDevices();
     },
 
-    /** 直接设置当前设备（App.vue 连接流程使用） */
+    /** 直接设置当前设备（App.vue 连接流程使用），自动补入设备列表 */
     setCurrentDevice(device: Device | null): void {
       console.log("[DevicesStore] setCurrentDevice:", device?.name, device?.id, device?.ip);
+      // 如果设备不在列表中，自动添加
+      if (device) {
+        const exists = this.devices.some(
+          (d) => d.id === device.id || (d.ip === device.ip && d.port === device.port),
+        );
+        if (!exists) {
+          console.log("[DevicesStore] setCurrentDevice: 设备不在列表中，自动添加");
+          this.devices.push(device);
+        }
+      }
       this.currentDevice = device;
       this.saveDevices();
     },
@@ -162,8 +172,11 @@ export const useDevicesStore = defineStore("devices", {
       void ping;
     },
 
-    /** 将发现的设备添加到临时列表 */
+    /** 将发现的设备添加到临时列表（过滤已保存的设备） */
     addDiscovered(device: Device): void {
+      // 排除已保存设备列表中的重复项
+      const alreadySaved = this.devices.some((d) => d.ip === device.ip && d.port === device.port);
+      if (alreadySaved) return;
       const exists = this.discovered.some((d) => d.ip === device.ip && d.port === device.port);
       if (!exists) {
         this.discovered.push(device);
@@ -174,13 +187,15 @@ export const useDevicesStore = defineStore("devices", {
       this.discovered = [];
     },
 
-    /** 从已发现列表导入到设备列表 */
-    importDiscovered(id: string): void {
+    /** 从已发现列表导入到设备列表，返回新设备 */
+    importDiscovered(id: string): Device | null {
       const idx = this.discovered.findIndex((d) => d.id === id);
-      if (idx === -1) return;
+      if (idx === -1) return null;
       const [dev] = this.discovered.splice(idx, 1);
-      this.devices.push({ ...dev, id: genId() });
+      const newDevice: Device = { ...dev, id: genId() };
+      this.devices.push(newDevice);
       this.saveDevices();
+      return newDevice;
     },
   },
 });

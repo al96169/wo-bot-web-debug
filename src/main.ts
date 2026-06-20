@@ -48,7 +48,21 @@ window.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => 
 // 4) 拦截 console.error / console.warn（捕获第三方库的错误输出）
 const _origError = console.error.bind(console);
 const _origWarn = console.warn.bind(console);
+const _origLog = console.log.bind(console);
+const _origInfo = console.info.bind(console);
+const _origDebug = console.debug.bind(console);
 const MAX_MSG = 500;
+
+function _isDebugMode(): boolean {
+  try {
+    const raw = localStorage.getItem("wobot_debug_settings");
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    return Boolean(data.debugMode);
+  } catch {
+    return false;
+  }
+}
 
 console.error = (...args: unknown[]): void => {
   _origError(...args);
@@ -60,4 +74,17 @@ console.warn = (...args: unknown[]): void => {
   _origWarn(...args);
   const msg = args.map((a) => String(a)).join(" ");
   safeLog("warn", "Console", msg.length > MAX_MSG ? msg.slice(0, MAX_MSG) + "..." : msg);
+};
+
+// debugMode 关闭时压制 console.log / info / debug
+console.log = (...args: unknown[]): void => {
+  if (_isDebugMode()) _origLog(...args);
+};
+
+console.info = (...args: unknown[]): void => {
+  if (_isDebugMode()) _origInfo(...args);
+};
+
+console.debug = (...args: unknown[]): void => {
+  if (_isDebugMode()) _origDebug(...args);
 };

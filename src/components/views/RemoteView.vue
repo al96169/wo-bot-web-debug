@@ -38,13 +38,20 @@ const leftCameraId = computed(() => (robotStore.cameras.length > 0 ? 0 : null));
 const rightCameraId = computed(() => (robotStore.cameras.length > 1 ? 1 : null));
 
 // 绑定 WebRTC 视频流到 <video> 元素（双摄像头独立流）
-// 流到达时始终设 srcObject（桌面 autoplay+muted 自动解码）
-// 移动端：用户点击"开启摄像头"时调用 play() 激活
+// 流到达时自动显示，流清空时重置状态
 watch(
   videoStream0,
   (stream) => {
-    if (stream && videoLeftRef.value) {
-      videoLeftRef.value.srcObject = stream;
+    const v = videoLeftRef.value;
+    if (stream && v) {
+      v.srcObject = stream;
+      v.play().catch(() => {});
+      cameraLeftOn.value = true;
+      startDebugLoop(0);
+    } else if (!stream) {
+      // 断开连接时重置
+      if (v) v.srcObject = null;
+      cameraLeftOn.value = false;
     }
   },
   { immediate: true, flush: "post" },
@@ -52,8 +59,15 @@ watch(
 watch(
   videoStream1,
   (stream) => {
-    if (stream && videoRightRef.value) {
-      videoRightRef.value.srcObject = stream;
+    const v = videoRightRef.value;
+    if (stream && v) {
+      v.srcObject = stream;
+      v.play().catch(() => {});
+      cameraRightOn.value = true;
+      startDebugLoop(1);
+    } else if (!stream) {
+      if (v) v.srcObject = null;
+      cameraRightOn.value = false;
     }
   },
   { immediate: true, flush: "post" },
@@ -329,19 +343,19 @@ function toggleLeftCamera() {
   const camId = leftCameraId.value;
   if (camId === null || camId === undefined) return;
   cameraLeftOn.value = !cameraLeftOn.value;
-  const action = cameraLeftOn.value ? "start" : "stop";
-  robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `左摄像头(${camId}) → ${action}` });
   if (cameraLeftOn.value) {
     const v = videoLeftRef.value;
     if (v && videoStream0.value) {
-      // 同步清空+重设 srcObject，保持用户手势上下文
       v.srcObject = null;
       v.srcObject = videoStream0.value;
       v.play().catch(() => {});
     }
-    sendCamera(action, camId);
+    sendCamera("start", camId);
+    robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `左摄像头(${camId}) → start` });
+    startDebugLoop(0);
   } else {
-    sendCamera(action, camId);
+    sendCamera("stop", camId);
+    robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `左摄像头(${camId}) → stop` });
   }
 }
 
@@ -349,8 +363,6 @@ function toggleRightCamera() {
   const camId = rightCameraId.value;
   if (camId === null || camId === undefined) return;
   cameraRightOn.value = !cameraRightOn.value;
-  const action = cameraRightOn.value ? "start" : "stop";
-  robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `右摄像头(${camId}) → ${action}` });
   if (cameraRightOn.value) {
     const v = videoRightRef.value;
     if (v && videoStream1.value) {
@@ -358,9 +370,12 @@ function toggleRightCamera() {
       v.srcObject = videoStream1.value;
       v.play().catch(() => {});
     }
-    sendCamera(action, camId);
+    sendCamera("start", camId);
+    robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `右摄像头(${camId}) → start` });
+    startDebugLoop(1);
   } else {
-    sendCamera(action, camId);
+    sendCamera("stop", camId);
+    robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `右摄像头(${camId}) → stop` });
   }
 }
 
@@ -479,7 +494,28 @@ function handleAction(action: string) {
 
 // ==================== 初始化 ====================
 
+/** 浏览器切后台再切回来时，video 元素可能解绑，重新绑定并显示 */
+function rebindVideoStreams(): void {
+  if (videoStream0.value && videoLeftRef.value) {
+    videoLeftRef.value.srcObject = videoStream0.value;
+    videoLeftRef.value.play().catch(() => {});
+    cameraLeftOn.value = true;
+  }
+  if (videoStream1.value && videoRightRef.value) {
+    videoRightRef.value.srcObject = videoStream1.value;
+    videoRightRef.value.play().catch(() => {});
+    cameraRightOn.value = true;
+  }
+}
+
+function onVisibilityChange(): void {
+  if (document.visibilityState === "visible") {
+    rebindVideoStreams();
+  }
+}
+
 // 云台摇杆: gimbalAvailable 可能异步到达，用 watch 延迟绑定
+// 重连时 _remoteFeatures 被清空再重新填充，需要重置状态重新绑定
 let _gimbalJoystickSetup = false;
 watch(
   gimbalAvailable,
@@ -487,6 +523,8 @@ watch(
     if (available && !_gimbalJoystickSetup && joystickCamLeftRef.value) {
       _gimbalJoystickSetup = true;
       setupJoystick(joystickCamLeftRef.value, "camLeft");
+    } else if (!available) {
+      _gimbalJoystickSetup = false;
     }
   },
   { immediate: true },
@@ -498,17 +536,26 @@ onMounted(() => {
   // 绑定平移和偏航摇杆（不需要服务端功能支持）
   if (joystickMoveRef.value) setupJoystick(joystickMoveRef.value, "move");
   if (joystickYawRef.value) setupJoystick(joystickYawRef.value, "yaw");
+  // 绑定云台摇杆（gimbalAvailable 可能在此前已变为 true，但 watch immediate 时 ref 还未挂载）
+  if (gimbalAvailable.value && !_gimbalJoystickSetup && joystickCamLeftRef.value) {
+    _gimbalJoystickSetup = true;
+    setupJoystick(joystickCamLeftRef.value, "camLeft");
+  }
+  // 确保视频流绑定到 video 元素（切换页面回来时可能丢失）
+  rebindVideoStreams();
   // 立即启动视频调试信息（每 500ms 刷新）
   startDebugLoop(0);
   startDebugLoop(1);
-  // 右云台摇杆不绑定，保持不可用
   // 延迟等待 WebSocket 连接就绪后请求摄像头列表
   setTimeout(() => requestCameraStatus(), 1000);
+  // 浏览器切后台再切回来时，video.srcObject 可能断开，重新绑定
+  document.addEventListener("visibilitychange", onVisibilityChange);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
   window.removeEventListener("keyup", handleKeyup);
+  document.removeEventListener("visibilitychange", onVisibilityChange);
   stopKeyboardLoop();
   if (_debugTimer0) {
     clearInterval(_debugTimer0);
