@@ -1,8 +1,11 @@
 {
-  "name": "wo-bot-vue",
+  "name": "wo-bot-web-debug",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "wo-bot 网页调试控制台，基于 Vue 3 + TypeScript + Vite",
+  "author": "Antonio Leung",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",

@@ -22,7 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-# Old project artifacts (exclude from Vue migration)
-wo-bot-web-debug/node_modules
-wo-bot-web-debug/.vite
