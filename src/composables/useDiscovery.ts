@@ -87,13 +87,26 @@ export function useDiscovery() {
     // 并行：mDNS 发现 + 本地快速探活
     const mdnsPromise = callMdnsApi(2500);
 
-    const localTargets = new Set<string>();
-    localTargets.add("127.0.0.1");
+    const localTargets: string[] = [];
+    // 探活分两步：
+    // 1) 如果从 localhost 访问（开发场景），探 127.0.0.1
+    // 2) 如果从局域网 IP 访问，跳过该 IP（它是 Vite 服务器，不是机器人），
+    //    改为基于同网段探测常见 IP（Jetson 等设备）
     const hostname = window.location.hostname;
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
-      localTargets.add(hostname);
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      localTargets.push("127.0.0.1");
+    } else if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+      // 当前访问的是 Vite 服务器的 IP，不是机器人，不要探它
+      const parts = hostname.split(".").map(Number);
+      // 同网段快速探活：扫描 .1, .2, .47, .100-.103
+      const candidates = [1, 2, 47, 100, 101, 102, 103];
+      for (const lastOctet of candidates) {
+        if (lastOctet !== parts[3]) {
+          localTargets.push(`${parts[0]}.${parts[1]}.${parts[2]}.${lastOctet}`);
+        }
+      }
     }
-    const localPromise = Promise.all([...localTargets].map((ip) => probe(ip, 1500)));
+    const localPromise = Promise.all(localTargets.map((ip) => probe(ip, 800)));
 
     const [mdnsDevices, localResults] = await Promise.all([mdnsPromise, localPromise]);
 

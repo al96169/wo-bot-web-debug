@@ -4,6 +4,7 @@ import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
 import type { ViewName } from "@/types";
+import CommsMonitor from "@/components/CommsMonitor.vue";
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
@@ -14,6 +15,7 @@ const emit = defineEmits<{
 }>();
 
 const opsMenuOpen = ref(false);
+const commsMonitorOpen = ref(false);
 
 const isConnected = computed(() => appStore.connection === "connected");
 const hasDeviceSelected = computed(() => !!devicesStore.currentDevice);
@@ -85,6 +87,18 @@ function toggleOpsMenu() {
 function handleOpsAction(action: string) {
   opsMenuOpen.value = false;
   emit("ops-action", { type: action });
+}
+
+function toggleCommsMonitor() {
+  commsMonitorOpen.value = !commsMonitorOpen.value;
+  if (commsMonitorOpen.value) opsMenuOpen.value = false;
+}
+
+function closeCommsMonitor(e: MouseEvent) {
+  const wrapper = document.querySelector(".comms-monitor-wrapper");
+  if (wrapper && !wrapper.contains(e.target as Node)) {
+    commsMonitorOpen.value = false;
+  }
 }
 
 const connectionTooltipHTML = computed(() => {
@@ -193,8 +207,14 @@ function closeOpsMenu(e: MouseEvent) {
   }
 }
 
-onMounted(() => document.addEventListener("click", closeOpsMenu));
-onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
+onMounted(() => {
+  document.addEventListener("click", closeOpsMenu);
+  document.addEventListener("click", closeCommsMonitor);
+});
+onUnmounted(() => {
+  document.removeEventListener("click", closeOpsMenu);
+  document.removeEventListener("click", closeCommsMonitor);
+});
 </script>
 
 <template>
@@ -340,6 +360,19 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
       >
         {{ item.label }}
       </button>
+      <div class="comms-monitor-wrapper" :class="{ active: commsMonitorOpen }">
+        <button
+          class="comms-btn"
+          :class="{ active: commsMonitorOpen }"
+          title="通讯状态监控"
+          @click="toggleCommsMonitor"
+        >
+          📡 通讯
+        </button>
+        <div v-show="commsMonitorOpen" class="comms-dropdown">
+          <CommsMonitor />
+        </div>
+      </div>
     </div>
   </header>
 </template>
@@ -577,8 +610,7 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
   padding: 4px 20px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
 }
 .header-nav button {
   padding: 6px 14px;
@@ -598,6 +630,36 @@ onUnmounted(() => document.removeEventListener("click", closeOpsMenu));
 .header-nav button.active {
   background: var(--accent);
   color: #fff;
+}
+
+/* ---- 通讯监控下拉 ---- */
+.comms-monitor-wrapper {
+  position: relative;
+}
+.comms-btn {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.comms-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.comms-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+.comms-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 300;
 }
 
 /* ---- 连接提示工具 (tip styles) ---- */

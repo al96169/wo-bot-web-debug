@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
-import { getSignalingWs, setDataChannel, getRemoteFeatures } from "./useWebSocket";
+import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime } from "./useWebSocket";
 
 /* ============================================================
  * wo-bot-web-debug - WebRTC 连接管理
@@ -62,6 +62,10 @@ export async function handleWebRTCIceCandidate(
     sdpMid,
     sdpMLineIndex,
   });
+  // 记录远端候选
+  if (candidate) {
+    remoteCandidates.value = [...remoteCandidates.value, candidate].slice(-20);
+  }
   if (!_pc) {
     console.warn("[WebRTC:ICE] _pc 为 null, 丢弃 ICE candidate（信令到达时 PC 尚未创建或已销毁）");
     return;
@@ -92,11 +96,112 @@ const pc = ref<RTCPeerConnection | null>(null);
 const dc = ref<RTCDataChannel | null>(null);
 const videoStream0 = ref<MediaStream | null>(null);
 const videoStream1 = ref<MediaStream | null>(null);
+
+// ---- WebRTC 监控状态 ----
+const iceConnectionState = ref<string>("new");
+const iceGatheringState = ref<string>("new");
+const connectionState = ref<string>("new");
+const signalingState = ref<string>("stable");
+const dcReadyState = ref<string>("closed");
+/** DC 是否曾经成功打开过（用于区分"从未建立"和"打开后关闭"） */
+const dcEverOpened = ref(false);
+const localCandidates = ref<string[]>([]);
+const remoteCandidates = ref<string[]>([]);
+
+// ICE completed 兜底定时器（清除 connectionState 未触发的边缘情况）
+let _iceFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ICE gathering 完成兜底定时器（iPadOS WebKit iceConnectionState 不转换的兜底）
+let _gatheringFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** gatheringCompleted 标记，供监控面板排查 */
+const gatheringCompleted = ref(false);
+
 const webrtcState = ref<"idle" | "connecting" | "connected" | "failed">("idle");
+
+// 媒体超时自动重试：连接建立后 5s 内未收到实际视频数据则重试
+let _mediaTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+let _mediaRetryCount = 0;
+let _videoPlaying = false;
+const MAX_MEDIA_RETRY = 3;
 
 export function useWebRTC() {
   const appStore = useAppStore();
   const robotStore = useRobotStore();
+
+  // ---- 媒体超时自动重试辅助函数 ----
+  function _clearMediaTimeout(): void {
+    if (_mediaTimeoutTimer) {
+      clearTimeout(_mediaTimeoutTimer);
+      _mediaTimeoutTimer = null;
+    }
+  }
+
+  function _startMediaTimeout(): void {
+    _clearMediaTimeout();
+    console.log("[WebRTC:Media] 启动媒体超时检测 (5s), 当前重试次数:", _mediaRetryCount);
+    _mediaTimeoutTimer = setTimeout(() => {
+      _mediaTimeoutTimer = null;
+      if (!_videoPlaying) {
+        console.warn("[WebRTC:Media] 5s 内未收到实际视频数据, 触发重试");
+        _doRetry();
+      }
+    }, 5000);
+  }
+
+  function _doRetry(): void {
+    if (_mediaRetryCount >= MAX_MEDIA_RETRY) {
+      console.warn("WebRTC 自动重试已达上限");
+      return;
+    }
+    _mediaRetryCount++;
+    _videoPlaying = false;
+    console.log(`[WebRTC:Media] 第 ${_mediaRetryCount}/${MAX_MEDIA_RETRY} 次重试`);
+    robotStore.addLog("warn", "WebRTC", `未收到视频流，第 ${_mediaRetryCount} 次重试...`);
+    resetAndOffer();
+  }
+
+  // ---- ICE 兜底定时器 ----
+  function _startIceFallback(): void {
+    _clearIceFallback();
+    _iceFallbackTimer = setTimeout(() => {
+      if (webrtcState.value !== "connected" && webrtcState.value !== "failed") {
+        console.warn("[WebRTC:ICE] connectionState 未变化超过 5s, 使用 ICE completed 作为兜底");
+        webrtcState.value = "connected";
+        _startMediaTimeout();
+        appStore.setSSHConnected(true);
+      }
+    }, 5000);
+  }
+
+  function _clearIceFallback(): void {
+    if (_iceFallbackTimer) {
+      clearTimeout(_iceFallbackTimer);
+      _iceFallbackTimer = null;
+    }
+  }
+
+  // ---- Gathering 完成兜底（Android/iPadOS 上 iceConnectionState 不转换的兜底） ----
+  function _startGatheringFallback(): void {
+    _clearGatheringFallback();
+    // 等 ICE candidates 全部收集完毕后再给额外时间建立连接
+    _gatheringFallbackTimer = setTimeout(() => {
+      if (webrtcState.value === "connecting") {
+        console.warn("[WebRTC:ICE] gathering 完成但 webrtcState 仍为 connecting, 强制标记为 connected (WebKit/Android 兜底)");
+        webrtcState.value = "connected";
+        _startMediaTimeout();
+        appStore.setSSHConnected(true);
+        robotStore.addLog("warn", "WebRTC", "ICE gathering 完成兜底: 强制标记为已连接");
+      }
+    }, 8000); // 8s after gathering complete
+  }
+
+  function _clearGatheringFallback(): void {
+    if (_gatheringFallbackTimer) {
+      clearTimeout(_gatheringFallbackTimer);
+      _gatheringFallbackTimer = null;
+    }
+  }
 
   /** 建立 WebRTC 连接（在 WebSocket 信令连通后调用） */
   async function establishConnection(): Promise<void> {
@@ -157,8 +262,11 @@ export function useWebRTC() {
         console.log("[WebRTC] Remote DataChannel received:", rc.label);
         rc.onopen = () => {
           console.log("[WebRTC] Remote DC opened, using as fallback");
+          dcReadyState.value = "open";
+          dcEverOpened.value = true;
           robotStore.addLog("info", "WebRTC", "DataChannel 已建立 — 业务通道就绪");
           webrtcState.value = "connected";
+          _startMediaTimeout();
           appStore.setSSHConnected(true);
           appStore.showToast("WebRTC 业务通道已建立", "success");
           rc.send(JSON.stringify({ type: "subscribe", data: { events: ["status"] } }));
@@ -186,12 +294,16 @@ export function useWebRTC() {
         ordered: true,
       });
       dc.value = channel;
+      dcReadyState.value = "connecting";
       setDataChannel(channel);
 
       channel.onopen = () => {
         console.log("[WebRTC] DataChannel opened!");
+        dcReadyState.value = "open";
+        dcEverOpened.value = true;
         robotStore.addLog("info", "WebRTC", "DataChannel 已建立 — 业务通道就绪");
         webrtcState.value = "connected";
+        _startMediaTimeout();
         appStore.setSSHConnected(true);
         appStore.showToast("WebRTC 业务通道已建立", "success");
         channel.send(JSON.stringify({ type: "subscribe", data: { events: ["status"] } }));
@@ -209,6 +321,7 @@ export function useWebRTC() {
       channel.onclose = () => {
         // 防止旧 DC 的 onclose 异步触发后覆盖新 DC 状态
         if (dc.value !== channel) return;
+        dcReadyState.value = "closed";
         robotStore.addLog("warn", "WebRTC", "DataChannel 已关闭");
         webrtcState.value = "idle";
         appStore.setSSHConnected(false);
@@ -230,8 +343,44 @@ export function useWebRTC() {
 
       peerConnection.ontrack = (event: RTCTrackEvent) => {
         _ontrackCount++;
-        const resolvedStream = event.streams?.[0] || new MediaStream([event.track]);
-        console.log("[WebRTC] ontrack #" + _ontrackCount, "track:", event.track.id, "kind:", event.track.kind, "streams:", event.streams?.length ?? 0);
+        // WebKit (iOS/iPadOS) 兼容：event.streams 可能为空数组，new MediaStream([track]) 也可能不兼容
+        // 最优：使用 event.streams[0]，其次：手动 addTrack
+        let resolvedStream: MediaStream;
+        if (event.streams && event.streams.length > 0) {
+          resolvedStream = event.streams[0];
+        } else {
+          resolvedStream = new MediaStream();
+          resolvedStream.addTrack(event.track);
+        }
+        console.log("[WebRTC] ontrack #" + _ontrackCount, "track:", event.track.id, "kind:", event.track.kind, "streams:", event.streams?.length ?? 0, "stream.tracks:", resolvedStream.getTracks().length);
+
+        // 监听 track 状态变化（mute/ended 是画面冻结的关键信号）
+        event.track.onmute = () => {
+          console.warn("[WebRTC:Track] track muted:", event.track.id, "readyState:", event.track.readyState);
+          robotStore.addLog("warn", "WebRTC", `视频轨静音: ${event.track.id}`);
+        };
+        event.track.onunmute = () => {
+          console.log("[WebRTC:Track] track unmuted:", event.track.id, "readyState:", event.track.readyState);
+          robotStore.addLog("info", "WebRTC", `视频轨恢复: ${event.track.id}`);
+          // 仅视频轨开始接收数据时标记为播放中
+          if (event.track.kind === "video") {
+            _videoPlaying = true;
+            _clearMediaTimeout();
+            _mediaRetryCount = 0;
+            // 视频数据到达 = 连接实际成功，比 ICE/connectionState 更可靠
+            if (webrtcState.value === "connecting") {
+              _clearGatheringFallback();
+              _clearIceFallback();
+              webrtcState.value = "connected";
+              appStore.setSSHConnected(true);
+              console.log("[WebRTC] 视频轨数据到达, webrtcState → connected");
+            }
+          }
+        };
+        event.track.onended = () => {
+          console.warn("[WebRTC:Track] track ended:", event.track.id);
+          robotStore.addLog("warn", "WebRTC", `视频轨结束: ${event.track.id}`);
+        };
 
         if (_ontrackCount === 1) {
           videoStream0.value = resolvedStream;
@@ -240,18 +389,23 @@ export function useWebRTC() {
           videoStream1.value = resolvedStream;
           robotStore.addLog("info", "WebRTC", "收到摄像头 1 视频流");
         }
+
+        // 注意：不清除媒体超时，等待 onunmute 确认视频轨正在接收数据
       };
 
       // ICE candidate → 通过信令发送
       peerConnection.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
         if (event.candidate) {
-          console.log("[WebRTC:ICE] 本地 ICE candidate:", event.candidate.candidate?.substring(0, 80), "ws ready:", ws.readyState);
+          const candStr = event.candidate.candidate ?? "";
+          console.log("[WebRTC:ICE] 本地 ICE candidate:", candStr.substring(0, 80), "ws ready:", ws.readyState);
+          // 记录本地候选
+          localCandidates.value = [...localCandidates.value, candStr].slice(-20);
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(
               JSON.stringify({
                 type: "webrtc_ice_candidate",
                 data: {
-                  candidate: event.candidate.candidate,
+                  candidate: candStr,
                   sdpMid: event.candidate.sdpMid,
                   sdpMLineIndex: event.candidate.sdpMLineIndex,
                 },
@@ -263,17 +417,55 @@ export function useWebRTC() {
         }
       };
 
+      // ICE 连接状态监听（更细粒度，先于 connectionState 变化）
+      peerConnection.oniceconnectionstatechange = () => {
+        if (pc.value !== peerConnection) return;
+        const iceState = peerConnection.iceConnectionState;
+        iceConnectionState.value = iceState;
+        console.log("[WebRTC:ICE] iceConnectionState ->", iceState, "connectionState:", peerConnection.connectionState, "signalingState:", peerConnection.signalingState);
+        robotStore.addLog("info", "WebRTC", `ICE状态: ${iceState}`);
+        if (iceState === "connected" || iceState === "completed") {
+          console.log("[WebRTC:ICE] ICE 已连接, 等待 DTLS/DataChannel");
+          _clearGatheringFallback();
+          _startIceFallback();
+        } else if (iceState === "failed") {
+          console.error("[WebRTC:ICE] ICE 连接失败");
+          _clearGatheringFallback();
+          webrtcState.value = "failed";
+          appStore.setSSHConnected(false);
+        }
+      };
+
+      // ICE gathering 状态监听
+      peerConnection.onicegatheringstatechange = () => {
+        if (pc.value !== peerConnection) return;
+        const gatherState = peerConnection.iceGatheringState;
+        iceGatheringState.value = gatherState;
+        console.log("[WebRTC:ICE] iceGatheringState ->", gatherState);
+        if (gatherState === "complete") {
+          gatheringCompleted.value = true;
+          _startGatheringFallback();
+        }
+      };
+
       peerConnection.onconnectionstatechange = () => {
         if (pc.value !== peerConnection) return; // 不是当前活跃的 PC
         const state = peerConnection.connectionState;
+        connectionState.value = state;
+        signalingState.value = peerConnection.signalingState;
         console.log("[WebRTC] connectionState ->", state, "iceState:", peerConnection.iceConnectionState, "signalingState:", peerConnection.signalingState);
         robotStore.addLog("info", "WebRTC", `连接状态: ${state}`);
         if (state === "connected") {
+          _clearGatheringFallback();
           webrtcState.value = "connected";
+          _startMediaTimeout();
           appStore.setSSHConnected(true);
+          _clearIceFallback();
         } else if (state === "failed" || state === "disconnected") {
+          _clearGatheringFallback();
           webrtcState.value = "failed";
           appStore.setSSHConnected(false);
+          _clearIceFallback();
         }
       };
 
@@ -284,6 +476,7 @@ export function useWebRTC() {
       // 创建 SDP offer
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
+      signalingState.value = peerConnection.signalingState;
       console.log("[WebRTC] Offer SDP has DC:", offer.sdp?.includes("m=application") ?? false);
 
       ws.send(JSON.stringify({ type: "webrtc_offer", data: { sdp: offer.sdp } }));
@@ -304,8 +497,22 @@ export function useWebRTC() {
         return;
       }
 
+      // 诊断：分析 answer SDP
+      const answerHasIceLite = answer.includes("a=ice-lite");
+      const answerCandidates = (answer.match(/a=candidate/g) || []).length;
+      const answerHasVideo = answer.includes("m=video");
+      const answerHasApp = answer.includes("m=application");
+      console.log("[WebRTC] Answer SDP 诊断:", {
+        hasIceLite: answerHasIceLite,
+        candidateCount: answerCandidates,
+        hasVideo: answerHasVideo,
+        hasDataChannel: answerHasApp,
+        sdpLength: answer.length,
+        sdpPreview: answer.substring(0, 300),
+      });
       await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: answer }));
-      console.log("[WebRTC] setRemoteDescription OK, connectionState:", peerConnection.connectionState);
+      signalingState.value = peerConnection.signalingState;
+      console.log("[WebRTC] setRemoteDescription OK, connectionState:", peerConnection.connectionState, "iceState:", peerConnection.iceConnectionState);
       robotStore.addLog("info", "WebRTC", "WebRTC 连接建立完成");
     } catch (e) {
       robotStore.addLog("error", "WebRTC", `WebRTC 连接失败: ${e}`);
@@ -350,6 +557,7 @@ export function useWebRTC() {
       }
       case "pong":
         appStore._lastPing = Date.now();
+        refreshHeartbeatPongTime(); // 防御性：同步更新 WS 心跳时间戳，防止误判超时
         break;
       case "logs": {
         const logs = Array.isArray(data.logs) ? (data.logs as Array<Record<string, unknown>>) : [];
@@ -421,9 +629,6 @@ export function useWebRTC() {
         });
         appStore.showToast("急停已触发", "error");
         break;
-      case "camera_status":
-        robotStore.addLog("info", "Camera", `摄像头状态: ${JSON.stringify(data).slice(0, 100)}`);
-        break;
       case "device_control_ack":
         robotStore.addLog("info", "Device", `${data.action} → ${data.enabled ? "ON" : "OFF"}`);
         break;
@@ -466,6 +671,10 @@ export function useWebRTC() {
   function close(): void {
     _clearPending();
     _establishing = false; // 重置建立状态，允许重新连接
+    _clearIceFallback();
+    _clearGatheringFallback();
+    _clearMediaTimeout();
+    _videoPlaying = false;
     if (dc.value) {
       dc.value.close();
       dc.value = null;
@@ -480,7 +689,23 @@ export function useWebRTC() {
     videoStream1.value = null;
     setDataChannel(null);
     webrtcState.value = "idle";
+    // 重置监控状态
+    iceConnectionState.value = "new";
+    iceGatheringState.value = "new";
+    connectionState.value = "new";
+    signalingState.value = "stable";
+    dcReadyState.value = "closed";
+    dcEverOpened.value = false;
+    gatheringCompleted.value = false;
+    localCandidates.value = [];
+    remoteCandidates.value = [];
     robotStore.addLog("info", "WebRTC", "WebRTC 连接已关闭");
+  }
+
+  /** 重置并重新发起 WebRTC 连接（关闭当前 PC 后重新 createOffer） */
+  async function resetAndOffer(): Promise<void> {
+    close();
+    await establishConnection();
   }
 
   /** 重连 — 关闭旧连接并立即建立新连接（摄像头启停后刷新视频轨） */
@@ -497,5 +722,8 @@ export function useWebRTC() {
     }
   }
 
-  return { pc, dc, videoStream0, videoStream1, webrtcState, establishConnection, close, reconnect };
+  return { pc, dc, videoStream0, videoStream1, webrtcState,
+    iceConnectionState, iceGatheringState, connectionState, signalingState, dcReadyState, dcEverOpened,
+    gatheringCompleted, localCandidates, remoteCandidates,
+    establishConnection, close, reconnect, resetAndOffer };
 }

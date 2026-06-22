@@ -19,10 +19,31 @@ const {
   sendGimbalCenter,
   requestCameraStatus,
 } = useWebSocket();
-const { videoStream0, videoStream1 } = useWebRTC();
+const { videoStream0, videoStream1, webrtcState, iceConnectionState, iceGatheringState, connectionState, signalingState, dcReadyState, localCandidates, remoteCandidates } = useWebRTC();
 
 // 云台功能是否可用（服务端 features 包含 "gimbal"）
 const gimbalAvailable = computed(() => getRemoteFeatures().includes("gimbal"));
+
+// ---- WebRTC 监控面板 ----
+const showWebRTCInfo = ref(true);
+function stateClass(state: string): string {
+  const ok = ["connected", "completed", "open"];
+  const warn = ["connecting", "checking", "gathering"];
+  const err = ["failed", "closed", "disconnected"];
+  if (ok.includes(state)) return "state-ok";
+  if (warn.includes(state)) return "state-warn";
+  if (err.includes(state)) return "state-err";
+  return "";
+}
+function shortCandidate(c: string): string {
+  // 提取候选类型和 IP 地址
+  const parts = c.split(" ");
+  const typIdx = parts.indexOf("typ");
+  const type = typIdx >= 0 ? parts[typIdx + 1] : "?";
+  const ip = parts.length >= 5 ? parts[4] : "?";
+  const port = parts.length >= 6 ? parts[5] : "?";
+  return `${type} ${ip}:${port}`;
+}
 
 // Refs
 const joystickMoveRef = ref<HTMLCanvasElement | null>(null);
@@ -37,6 +58,44 @@ const cameraRightOn = ref(false);
 const leftCameraId = computed(() => (robotStore.cameras.length > 0 ? 0 : null));
 const rightCameraId = computed(() => (robotStore.cameras.length > 1 ? 1 : null));
 
+// video 元素事件回调引用（用于清理）
+let _onVid0Stalled: (() => void) | null = null;
+let _onVid0Waiting: (() => void) | null = null;
+let _onVid1Stalled: (() => void) | null = null;
+let _onVid1Waiting: (() => void) | null = null;
+
+function bindVideoEvents(videoEl: HTMLVideoElement, idx: 0 | 1, stream: MediaStream): void {
+  // 移除旧监听器
+  unbindVideoEvents(videoEl, idx);
+
+  const onStalled = () => {
+    console.warn(`[Video] cam${idx} stalled, currentTime:${videoEl.currentTime}, paused:${videoEl.paused}, ready:${videoEl.readyState}, network:${videoEl.networkState}`);
+    // 尝试恢复：重新绑定 srcObject
+    if (videoEl.srcObject) {
+      videoEl.srcObject = stream;
+      videoEl.play().catch((e) => console.error("[Video] cam" + idx + " stalled恢复播放失败:", e));
+    }
+  };
+  const onWaiting = () => {
+    console.warn(`[Video] cam${idx} waiting, currentTime:${videoEl.currentTime}, paused:${videoEl.paused}, ready:${videoEl.readyState}, network:${videoEl.networkState}`);
+  };
+
+  videoEl.addEventListener("stalled", onStalled);
+  videoEl.addEventListener("waiting", onWaiting);
+
+  if (idx === 0) { _onVid0Stalled = onStalled; _onVid0Waiting = onWaiting; }
+  else { _onVid1Stalled = onStalled; _onVid1Waiting = onWaiting; }
+}
+
+function unbindVideoEvents(videoEl: HTMLVideoElement, idx: 0 | 1): void {
+  const stalled = idx === 0 ? _onVid0Stalled : _onVid1Stalled;
+  const waiting = idx === 0 ? _onVid0Waiting : _onVid1Waiting;
+  if (stalled) { videoEl.removeEventListener("stalled", stalled); }
+  if (waiting) { videoEl.removeEventListener("waiting", waiting); }
+  if (idx === 0) { _onVid0Stalled = null; _onVid0Waiting = null; }
+  else { _onVid1Stalled = null; _onVid1Waiting = null; }
+}
+
 // 绑定 WebRTC 视频流到 <video> 元素（双摄像头独立流）
 // 流到达时自动显示，流清空时重置状态
 watch(
@@ -44,13 +103,15 @@ watch(
   (stream) => {
     const v = videoLeftRef.value;
     if (stream && v) {
+      v.muted = true; // iOS WebKit 需要显式设置才能 autoplay
       v.srcObject = stream;
-      v.play().catch(() => {});
+      v.play().catch((e) => console.error("[Video] cam0 play() 失败:", e));
+      bindVideoEvents(v, 0, stream);
       cameraLeftOn.value = true;
       startDebugLoop(0);
     } else if (!stream) {
       // 断开连接时重置
-      if (v) v.srcObject = null;
+      if (v) { v.srcObject = null; unbindVideoEvents(v, 0); }
       cameraLeftOn.value = false;
     }
   },
@@ -61,12 +122,14 @@ watch(
   (stream) => {
     const v = videoRightRef.value;
     if (stream && v) {
+      v.muted = true; // iOS WebKit 需要显式设置才能 autoplay
       v.srcObject = stream;
-      v.play().catch(() => {});
+      v.play().catch((e) => console.error("[Video] cam1 play() 失败:", e));
+      bindVideoEvents(v, 1, stream);
       cameraRightOn.value = true;
       startDebugLoop(1);
     } else if (!stream) {
-      if (v) v.srcObject = null;
+      if (v) { v.srcObject = null; unbindVideoEvents(v, 1); }
       cameraRightOn.value = false;
     }
   },
@@ -90,7 +153,8 @@ function updateVideoDebug(idx: 0 | 1): void {
     `${videoEl.videoWidth}x${videoEl.videoHeight}`,
     `ready:${videoEl.readyState}`,
     `trk:${track?.readyState ?? "-"}/${track?.enabled ?? "-"}`,
-    videoEl.muted ? "muted" : "unmuted",
+    `muted:${track?.muted ?? "-"}`,
+    videoEl.muted ? "vmuted" : "vunmuted",
   ].join(" ");
 }
 
@@ -348,7 +412,7 @@ function toggleLeftCamera() {
     if (v && videoStream0.value) {
       v.srcObject = null;
       v.srcObject = videoStream0.value;
-      v.play().catch(() => {});
+      v.play().catch((e) => console.error("[Video] cam0 toggle play() 失败:", e));
     }
     sendCamera("start", camId);
     robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `左摄像头(${camId}) → start` });
@@ -368,7 +432,7 @@ function toggleRightCamera() {
     if (v && videoStream1.value) {
       v.srcObject = null;
       v.srcObject = videoStream1.value;
-      v.play().catch(() => {});
+      v.play().catch((e) => console.error("[Video] cam1 toggle play() 失败:", e));
     }
     sendCamera("start", camId);
     robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `右摄像头(${camId}) → start` });
@@ -497,13 +561,17 @@ function handleAction(action: string) {
 /** 浏览器切后台再切回来时，video 元素可能解绑，重新绑定并显示 */
 function rebindVideoStreams(): void {
   if (videoStream0.value && videoLeftRef.value) {
+    videoLeftRef.value.muted = true;
     videoLeftRef.value.srcObject = videoStream0.value;
-    videoLeftRef.value.play().catch(() => {});
+    videoLeftRef.value.play().catch((e) => console.error("[Video] cam0 rebind play() 失败:", e));
+    bindVideoEvents(videoLeftRef.value, 0, videoStream0.value);
     cameraLeftOn.value = true;
   }
   if (videoStream1.value && videoRightRef.value) {
+    videoRightRef.value.muted = true;
     videoRightRef.value.srcObject = videoStream1.value;
-    videoRightRef.value.play().catch(() => {});
+    videoRightRef.value.play().catch((e) => console.error("[Video] cam1 rebind play() 失败:", e));
+    bindVideoEvents(videoRightRef.value, 1, videoStream1.value);
     cameraRightOn.value = true;
   }
 }
@@ -685,6 +753,65 @@ onUnmounted(() => {
           </div>
           <div class="keyboard-hint">
             <small>W=前进 S=后退 A=左移 D=右移 QE=偏航 RF=左云台 ZX=右云台 空格=急停</small>
+          </div>
+        </div>
+
+        <!-- WebRTC 监控面板 -->
+        <div class="webrtc-info-panel">
+          <div class="webrtc-info-header" @click="showWebRTCInfo = !showWebRTCInfo">
+            <span class="webrtc-info-title">WebRTC 连接监控</span>
+            <span class="webrtc-info-toggle">{{ showWebRTCInfo ? '▼' : '▶' }}</span>
+          </div>
+          <div v-if="showWebRTCInfo" class="webrtc-info-body">
+            <div class="webrtc-info-grid">
+              <div class="webrtc-info-item">
+                <span class="info-label">整体状态</span>
+                <span class="info-value" :class="stateClass(webrtcState)">{{ webrtcState }}</span>
+              </div>
+              <div class="webrtc-info-item">
+                <span class="info-label">Connection</span>
+                <span class="info-value" :class="stateClass(connectionState)">{{ connectionState }}</span>
+              </div>
+              <div class="webrtc-info-item">
+                <span class="info-label">ICE 连接</span>
+                <span class="info-value" :class="stateClass(iceConnectionState)">{{ iceConnectionState }}</span>
+              </div>
+              <div class="webrtc-info-item">
+                <span class="info-label">ICE 收集</span>
+                <span class="info-value" :class="stateClass(iceGatheringState)">{{ iceGatheringState }}</span>
+              </div>
+              <div class="webrtc-info-item">
+                <span class="info-label">信令状态</span>
+                <span class="info-value">{{ signalingState }}</span>
+              </div>
+              <div class="webrtc-info-item">
+                <span class="info-label">DataChannel</span>
+                <span class="info-value" :class="stateClass(dcReadyState)">{{ dcReadyState }}</span>
+              </div>
+            </div>
+            <!-- ICE Candidates -->
+            <div class="webrtc-candidates">
+              <div class="candidates-section">
+                <div class="candidates-title">本地 Candidates ({{ localCandidates.length }})</div>
+                <div v-if="localCandidates.length" class="candidates-list">
+                  <div v-for="(c, i) in localCandidates" :key="'l'+i" class="candidate-item">
+                    <span class="cand-idx">#{{ i }}</span>
+                    <span class="cand-text">{{ shortCandidate(c) }}</span>
+                  </div>
+                </div>
+                <div v-else class="candidates-empty">等待收集中...</div>
+              </div>
+              <div class="candidates-section">
+                <div class="candidates-title">远端 Candidates ({{ remoteCandidates.length }})</div>
+                <div v-if="remoteCandidates.length" class="candidates-list">
+                  <div v-for="(c, i) in remoteCandidates" :key="'r'+i" class="candidate-item">
+                    <span class="cand-idx">#{{ i }}</span>
+                    <span class="cand-text">{{ shortCandidate(c) }}</span>
+                  </div>
+                </div>
+                <div v-else class="candidates-empty">等待中...</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -936,5 +1063,119 @@ onUnmounted(() => {
 .keyboard-hint {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* ===== WebRTC 监控面板 ===== */
+.webrtc-info-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: 11px;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+}
+.webrtc-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  cursor: pointer;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.webrtc-info-header:hover {
+  background: var(--bg-hover);
+}
+.webrtc-info-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.webrtc-info-toggle {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.webrtc-info-body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.webrtc-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px 12px;
+}
+.webrtc-info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+.info-label {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.info-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 11px;
+}
+.info-value.state-ok {
+  color: #4ade80;
+}
+.info-value.state-warn {
+  color: #facc15;
+}
+.info-value.state-err {
+  color: #f87171;
+}
+
+.webrtc-candidates {
+  display: flex;
+  gap: 8px;
+}
+.candidates-section {
+  flex: 1;
+  min-width: 0;
+}
+.candidates-title {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.candidates-list {
+  max-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.candidate-item {
+  display: flex;
+  gap: 4px;
+  padding: 1px 4px;
+  background: var(--bg-secondary);
+  border-radius: 2px;
+}
+.cand-idx {
+  color: var(--text-muted);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+.cand-text {
+  color: var(--text-secondary);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.candidates-empty {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: italic;
+  padding: 4px;
 }
 </style>

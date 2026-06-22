@@ -26,8 +26,8 @@ const HEARTBEAT_TIMEOUT = 5000; // 心跳超时 5s（无 pong 则认为断开）
 let _ws: WebSocket | null = null;
 let _connectTimer: ReturnType<typeof setTimeout> | null = null;
 let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let _connectedIp = "";
-let _connectedPort = 0;
+const _connectedIp = ref("");
+const _connectedPort = ref(0);
 let _token = "";
 /** 标记是否为主动断开，防止 onclose 触发无意义重连 */
 let _intentionalDisconnect = false;
@@ -128,12 +128,17 @@ export function setDataChannel(dc: RTCDataChannel | null): void {
   }
 }
 
+/** 由 DataChannel pong 路径调用来同步更新心跳时间戳 */
+export function refreshHeartbeatPongTime(): void {
+  _lastPongTime = Date.now();
+}
+
 export function getSignalingWs(): WebSocket | null {
   return _ws;
 }
 
 export function getConnectedEndpoint(): { ip: string; port: number } {
-  return { ip: _connectedIp, port: _connectedPort };
+  return { ip: _connectedIp.value, port: _connectedPort.value };
 }
 
 /** 检查 DataChannel 是否就绪 */
@@ -176,8 +181,8 @@ export function useWebSocket() {
     console.log("[WS] connect() 调用:", {
       ip,
       port,
-      currentIp: _connectedIp,
-      currentPort: _connectedPort,
+      currentIp: _connectedIp.value,
+      currentPort: _connectedPort.value,
       hasWs: !!_ws,
       readyState: _ws?.readyState,
       intentionalDisconnect: _intentionalDisconnect,
@@ -193,8 +198,8 @@ export function useWebSocket() {
     _intentionalDisconnect = false;
     _handshakeAccepted = false;
     appStore.connection = "connecting";
-    _connectedIp = ip;
-    _connectedPort = port;
+    _connectedIp.value = ip;
+    _connectedPort.value = port;
     // 开发模式通过 Vite WebSocket 代理连接，绕过浏览器跨域/IP 限制
     const pv = _debugProtocolVersion >= 0 ? _debugProtocolVersion : PROTOCOL_VERSION;
     let url: string;
@@ -291,8 +296,8 @@ export function useWebSocket() {
 
   function disconnect(): void {
     console.log("[WS] disconnect() 主动断开", {
-      currentIp: _connectedIp,
-      currentPort: _connectedPort,
+      currentIp: _connectedIp.value,
+      currentPort: _connectedPort.value,
       hasWs: !!_ws,
       readyState: _ws?.readyState,
     });
@@ -321,9 +326,9 @@ export function useWebSocket() {
         console.warn("[WS] 心跳检测: WebSocket 已断开, readyState:", _ws?.readyState);
         stopHeartbeat();
         // 主动触发重连
-        if (_connectedIp && _connectedPort) {
+        if (_connectedIp.value && _connectedPort.value) {
           robotStore.addLog("warn", "Signaling", "检测到连接断开，尝试重连...");
-          maybeReconnect(_connectedIp, _connectedPort);
+          maybeReconnect(_connectedIp.value, _connectedPort.value);
         }
         return;
       }
@@ -335,7 +340,10 @@ export function useWebSocket() {
         _ws.close();
         return;
       }
-      _send({ type: "ping", data: { ts: Date.now() } });
+      // 心跳始终通过 WebSocket 直接发送，不经过 _send()
+      // 原因：_send() 优先走 DataChannel，但 DataChannel pong 响应更新的是
+      // appStore._lastPing 而非 _lastPongTime，导致心跳超时误关闭 WebSocket
+      _ws.send(JSON.stringify({ type: "ping", data: { ts: Date.now() } }));
     }, HEARTBEAT_INTERVAL);
   }
 
@@ -398,7 +406,7 @@ export function useWebSocket() {
         appStore.connection = "connected";
         appStore.showToast("信令通道已建立", "success");
         reconnectCount.value = 0;
-        robotStore.addLog("info", "Signaling", `信令已连接到 ${_connectedIp}:${_connectedPort}`);
+        robotStore.addLog("info", "Signaling", `信令已连接到 ${_connectedIp.value}:${_connectedPort.value}`);
         devicesStore.setRobotInfo({
           robot_id: String(data.robot_id ?? ""),
           name: String(data.name ?? ""),
@@ -693,6 +701,8 @@ export function useWebSocket() {
     ws,
     reconnectCount,
     lastMessage,
+    connectedIp: _connectedIp,
+    connectedPort: _connectedPort,
     connect,
     disconnect,
     send: _send,
