@@ -13,6 +13,7 @@ import { useRobotStore } from "../stores/robot";
  * ============================================================ */
 
 const WS_PORT = 8765;
+const PROBE_PROTOCOL_VERSION = 1; // 探活必须带协议版本，否则服务端拒绝连接
 
 interface MDnsDevice {
   name: string;
@@ -33,7 +34,7 @@ export function useDiscovery() {
   /** 快速探活单个 IP */
   function probe(ip: string, timeout: number): Promise<{ name: string; ip: string } | null> {
     return new Promise((resolve) => {
-      const ws = new WebSocket(`ws://${ip}:${WS_PORT}`);
+      const ws = new WebSocket(`ws://${ip}:${WS_PORT}?protocol_version=${PROBE_PROTOCOL_VERSION}`);
       const tid = setTimeout(() => {
         ws.close();
         resolve(null);
@@ -98,8 +99,8 @@ export function useDiscovery() {
     } else if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
       // 当前访问的是 Vite 服务器的 IP，不是机器人，不要探它
       const parts = hostname.split(".").map(Number);
-      // 同网段快速探活：扫描 .1, .2, .47, .100-.103
-      const candidates = [1, 2, 47, 100, 101, 102, 103];
+      // 同网段快速探活：扫描常见设备 IP（跳过 .1 路由器 和 .2）
+      const candidates = [47, 100, 101, 102, 103];
       for (const lastOctet of candidates) {
         if (lastOctet !== parts[3]) {
           localTargets.push(`${parts[0]}.${parts[1]}.${parts[2]}.${lastOctet}`);

@@ -51,7 +51,7 @@ function scheduleWebRTC(): void {
     // 如果 features 尚未就绪（connected 消息还没到），延迟再试（最多 10 次）
     if (features.length === 0) {
       _scheduleRetries = (_scheduleRetries || 0) + 1;
-      if (_scheduleRetries < 10) {
+      if (_scheduleRetries < 20) {
         console.log("[App] scheduleWebRTC: features 为空，500ms 后重试");
         scheduleWebRTC();
         return;
@@ -103,6 +103,7 @@ setOnVersionMismatch(() => {
 // 此时 _remoteFeatures 已由 connected handler 填充，可直接使用
 setOnReconnect(() => {
   console.log("[App] onReconnect: connected 消息到达, 直接建立 WebRTC");
+  _scheduleRetries = 0; // 重置 retry 计数
   // 取消 connectDirectly 中的冗余调度
   if (_webrtcTimer) {
     clearTimeout(_webrtcTimer);
@@ -235,6 +236,7 @@ function connectDirectly(device: Device) {
   try {
     console.log("[App] 清理 WebRTC, 发起 WebSocket 连接");
     closeWebRTC(); // 先清理旧 WebRTC 状态
+    _scheduleRetries = 0; // 重置重试计数器
     connect(device.ip, device.port);
     // scheduleWebRTC 由 _onReconnect 在收到 connected 消息后调度
     // 此处也调度作为保险（setTimeout 确保 _remoteFeatures 已填充）
