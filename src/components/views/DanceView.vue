@@ -9,33 +9,17 @@ const robotStore = useRobotStore();
 // ----- 功能可用性 -----
 const danceAvailable = computed(() => getRemoteFeatures().includes("dance"));
 
-// ----- 舞蹈列表 -----
-interface DanceInfo {
-  id: string;
-  name: string;
-  icon: string;
-  duration_sec: number;
-}
-const dances = ref<DanceInfo[]>([]);
+// ----- 从 store 读取舞蹈数据（跨视图切换持久化） -----
+const dances = computed(() => robotStore.dances);
+const status = computed(() => robotStore.danceStatus);
+const currentDanceId = computed(() => robotStore.danceCurrentId);
+const progress = computed(() => robotStore.danceProgress);
 const selectedDanceId = ref<string | null>(null);
 
-// ----- 播放状态 -----
-const status = ref<"stopped" | "playing" | "paused">("stopped");
-const currentDanceId = ref<string | null>(null);
-const progress = ref(0);
-
-// 监听来自服务端的 dance_list / dance_status 消息
+// 监听来自服务端的消息，自动拉取列表
 onMessage((msg: { type: string; data?: any }) => {
-  if (msg.type === "dance_list") {
-    dances.value = msg.data?.dances ?? [];
-  }
-  if (msg.type === "dance_status") {
-    status.value = msg.data?.status ?? "stopped";
-    currentDanceId.value = msg.data?.dance_id ?? null;
-    progress.value = msg.data?.progress ?? 0;
-  }
-  // 连接后 features 中有 dance 时自动拉取列表
-  if (msg.type === "status" && msg.data?.features?.includes("dance") && dances.value.length === 0) {
+  // 连接后 features 中有 dance 且列表为空时自动拉取
+  if (msg.type === "status" && msg.data?.features?.includes("dance") && robotStore.dances.length === 0) {
     send({ type: "dance", data: { command: "list" } });
   }
 });

@@ -22,6 +22,7 @@ import DanceView from "@/components/views/DanceView.vue";
 import MapView from "@/components/views/MapView.vue";
 import GalleryView from "@/components/views/GalleryView.vue";
 import SettingsView from "@/components/views/SettingsView.vue";
+import ProcessManagerView from "@/components/views/ProcessManagerView.vue";
 import AddDeviceDialog from "@/components/dialogs/AddDeviceDialog.vue";
 import SwitchDeviceDialog from "@/components/dialogs/SwitchDeviceDialog.vue";
 import OpsConfirmDialog from "@/components/dialogs/OpsConfirmDialog.vue";
@@ -298,6 +299,7 @@ function handleOpsAction(payload: { type: string }) {
     reboot: { title: "确认操作", message: "确定要重启机器人吗？此操作将断开当前连接。" },
     shutdown: { title: "确认操作", message: "确定要关闭机器人吗？" },
     forget: { title: "确认操作", message: "确定要忘记此设备吗？此操作将删除设备的连接记录。" },
+    restart_service: { title: "确认操作", message: "确定要重启主服务吗？此操作将断开当前连接。" },
   };
   const action = actions[payload.type];
   if (action) {
@@ -352,6 +354,17 @@ function handleOpsConfirm() {
     sendSystemAction("shutdown");
     disconnect();
   }
+  if (type === "restart_service") {
+    robotStore.addCmdLog({
+      time: new Date().toLocaleTimeString(),
+      direction: "send",
+      type: "restart_service",
+      data: "重启主服务",
+    });
+    robotStore.addLog("info", "设备", "发送主服务重启指令");
+    sendSystemAction("restart_service");
+    disconnect();
+  }
   opsConfirm.value = null;
 }
 
@@ -382,6 +395,7 @@ const viewsMap: Record<ViewName, unknown> = {
   map: MapView,
   gallery: GalleryView,
   settings: SettingsView,
+  processManager: ProcessManagerView,
 };
 </script>
 
@@ -392,7 +406,9 @@ const viewsMap: Record<ViewName, unknown> = {
       <AppSidebar @select-device="handleSelectDevice" @add-device="handleAddDevice" />
       <main class="main-content">
         <div class="views-container">
-          <component :is="viewsMap[appStore.currentView]" />
+          <KeepAlive>
+            <component :is="viewsMap[appStore.currentView]" />
+          </KeepAlive>
         </div>
         <BottomPanel />
       </main>

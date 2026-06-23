@@ -144,6 +144,25 @@ export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "er
 /** 控制模式 */
 export type ControlMode = "manual" | "semi" | "auto";
 
+/** 服务状态 */
+export interface ServiceInfo {
+  service_id: string;
+  name: string;
+  status: "stopped" | "starting" | "running" | "failed";
+  pid: number | null;
+  restart_count: number;
+  last_error: string;
+  uptime: number;
+}
+
+/** 舞蹈曲目 */
+export interface DanceInfo {
+  id: string;
+  name: string;
+  icon: string;
+  duration_sec: number;
+}
+
 /** 主题 */
 export type Theme = "dark" | "light" | "auto";
 
@@ -158,7 +177,8 @@ export type ViewName =
   | "dance"
   | "map"
   | "gallery"
-  | "settings";
+  | "settings"
+  | "processManager";
 
 /** 底部面板 tab */
 export type BottomTab = "modules" | "cmdLog" | "ssh";

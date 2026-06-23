@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import type { GalleryItem, LogEntry, Message, Module, Software } from "../types";
+import type { DanceInfo, GalleryItem, LogEntry, Message, Module, ServiceInfo, Software } from "../types";
 
 /* ============================================================
  * wo-bot-vue - 机器人数据 (Pinia Store)
@@ -129,6 +129,18 @@ export const useRobotStore = defineStore("robot", {
 
     /** WiFi 扫描结果 */
     wifiScanResult: { currentSsid: "", currentDevice: "", networks: [] } as WifiScanResult,
+
+    /** 子服务列表 */
+    services: [] as ServiceInfo[],
+
+    /** 舞蹈曲目列表 */
+    dances: [] as DanceInfo[],
+    /** 舞蹈播放状态 */
+    danceStatus: "stopped" as "stopped" | "playing" | "paused",
+    /** 当前播放的舞蹈 ID */
+    danceCurrentId: null as string | null,
+    /** 播放进度 0~1 */
+    danceProgress: 0 as number,
   }),
 
   getters: {
@@ -303,6 +315,24 @@ export const useRobotStore = defineStore("robot", {
 
     setWifiNetworks(result: WifiScanResult): void {
       this.wifiScanResult = result;
+    },
+
+    /* ---- 服务 ---- */
+
+    setServices(svcs: ServiceInfo[]): void {
+      this.services = svcs;
+    },
+
+    /* ---- 舞蹈 ---- */
+
+    setDances(list: DanceInfo[]): void {
+      this.dances = list;
+    },
+
+    setDanceStatus(status: "stopped" | "playing" | "paused", danceId?: string | null, progress?: number): void {
+      this.danceStatus = status;
+      if (danceId !== undefined) this.danceCurrentId = danceId;
+      if (progress !== undefined) this.danceProgress = progress;
     },
   },
 });

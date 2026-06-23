@@ -3,7 +3,7 @@ import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
 import { resolveWebRTCAnswer, handleWebRTCIceCandidate } from "./useWebRTC";
-import type { Module, Software } from "../types";
+import type { DanceInfo, Module, ServiceInfo, Software } from "../types";
 
 /* ============================================================
  * wo-bot-web-debug - WebSocket + WebRTC 通信层
@@ -474,6 +474,46 @@ export function useWebSocket() {
         if (Array.isArray(data.features) && data.features.length > 0) {
           _remoteFeatures.value = data.features as string[];
         }
+        // 从 status 中同步服务状态
+        if (Array.isArray(data.services)) {
+          robotStore.setServices(data.services as ServiceInfo[]);
+        }
+        break;
+      }
+      case "service_status": {
+        if (Array.isArray(data.services)) {
+          robotStore.setServices(data.services as ServiceInfo[]);
+        }
+        break;
+      }
+      case "service_message": {
+        const svcMsg = data as Record<string, unknown>;
+        robotStore.addMessage({
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          subject: String(svcMsg.subject ?? "服务通知"),
+          time: Date.now(),
+          summary: String(svcMsg.summary ?? ""),
+          body: String(svcMsg.body ?? ""),
+          read: false,
+          source: String(svcMsg.source ?? "service_manager"),
+          severity: (["info", "warning", "error"].includes(String(svcMsg.severity)) ? svcMsg.severity : "info") as "info" | "warning" | "error",
+        });
+        break;
+      }
+      case "service_control_ack": {
+        robotStore.addLog("info", "Service", `${data.service_id} → ${data.action} (${data.status})`);
+        break;
+      }
+      case "dance_list": {
+        robotStore.setDances(Array.isArray(data.dances) ? (data.dances as DanceInfo[]) : []);
+        break;
+      }
+      case "dance_status": {
+        robotStore.setDanceStatus(
+          String(data.status ?? "stopped") as "stopped" | "playing" | "paused",
+          data.dance_id != null ? String(data.dance_id) : null,
+          typeof data.progress === "number" ? data.progress : undefined,
+        );
         break;
       }
       case "exec_result": {
@@ -692,6 +732,12 @@ export function useWebSocket() {
   function sendWifiDisconnect(device: string): void {
     _send({ type: "wifi_disconnect", data: { device } });
   }
+  function sendServiceStatus(): void {
+    _send({ type: "service_status", data: {} });
+  }
+  function sendServiceControl(serviceId: string, action: string): void {
+    _send({ type: "service_control", data: { service_id: serviceId, action } });
+  }
 
   function cleanup(): void {
     disconnect();
@@ -729,5 +775,7 @@ export function useWebSocket() {
     sendWifiScan,
     sendWifiConnect,
     sendWifiDisconnect,
+    sendServiceStatus,
+    sendServiceControl,
   };
 }
