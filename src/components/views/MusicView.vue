@@ -177,12 +177,12 @@ onErrorCaptured((err, _instance, info) => {
 <template>
   <div class="music-view">
     <!-- 连接/服务提示 -->
-    <div class="banner-top" v-if="!isWsConnected || (isWsConnected && !isMusicServiceRunning)">
-      <div class="service-banner disconnect" v-if="!isWsConnected">
+    <div v-if="!isWsConnected || (isWsConnected && !isMusicServiceRunning)" class="banner-top">
+      <div v-if="!isWsConnected" class="service-banner disconnect">
         <span class="banner-icon">🔌</span>
         <span>与机器人连接已断开</span>
       </div>
-      <div class="service-banner" v-else-if="!isMusicServiceRunning">
+      <div v-else-if="!isMusicServiceRunning" class="service-banner">
         <span class="banner-icon">⚠️</span>
         <span>音乐播放服务未运行</span>
         <button class="btn-sm primary" @click="startMusicService">▶ 启动</button>
@@ -191,7 +191,7 @@ onErrorCaptured((err, _instance, info) => {
 
     <!-- Toast 反馈 -->
     <Transition name="toast-fade">
-      <div class="toast" v-if="toastMsg">{{ toastMsg }}</div>
+      <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
     </Transition>
 
     <!-- ---- Tab 导航 ---- -->
@@ -209,7 +209,7 @@ onErrorCaptured((err, _instance, info) => {
         @click="activeTab = 'playlist'"
       >
         📋 播放列表
-        <span class="tab-badge" v-if="music.playlist?.length">{{ music.playlist.length }}</span>
+        <span v-if="music.playlist?.length" class="tab-badge">{{ music.playlist.length }}</span>
       </button>
       <button
         class="tab-btn"
@@ -221,12 +221,12 @@ onErrorCaptured((err, _instance, info) => {
     </div>
 
     <!-- ---- Tab: 本地音乐 ---- -->
-    <div class="tab-content" v-if="activeTab === 'local'">
+    <div v-if="activeTab === 'local'" class="tab-content">
       <div class="section-header">
         <span>共 {{ songs.length }} 首</span>
         <button class="btn-sm" @click="refreshSongs">🔄 刷新</button>
       </div>
-      <div class="song-list scrollable" v-if="songs.length > 0">
+      <div v-if="songs.length > 0" class="song-list scrollable">
         <div
           v-for="song in songs"
           :key="song.filename"
@@ -244,22 +244,22 @@ onErrorCaptured((err, _instance, info) => {
               <span class="song-sub">{{ (song.format || "").toUpperCase() }} · {{ formatSize(song.size) }}</span>
             </div>
           </div>
-          <button class="btn-icon-sm" @click="addToPlaylist(song.filename)" title="添加到队列">➕</button>
+          <button class="btn-icon-sm" title="添加到队列" @click="addToPlaylist(song.filename)">➕</button>
         </div>
       </div>
-      <div class="empty-hint" v-else>
+      <div v-else class="empty-hint">
         <p>暂无歌曲</p>
         <p class="sub">将音乐文件放入机器人的 ~/media/music 目录</p>
       </div>
     </div>
 
     <!-- ---- Tab: 播放列表 ---- -->
-    <div class="tab-content" v-if="activeTab === 'playlist'">
-      <div class="section-header" v-if="music.playlist?.length">
+    <div v-if="activeTab === 'playlist'" class="tab-content">
+      <div v-if="music.playlist?.length" class="section-header">
         <span>共 {{ music.playlist.length }} 首</span>
         <button class="btn-sm danger" @click="clearPlaylist">清空</button>
       </div>
-      <div class="song-list scrollable" v-if="music.playlist?.length">
+      <div v-if="music.playlist?.length" class="song-list scrollable">
         <div
           v-for="(track, idx) in music.playlist"
           :key="idx"
@@ -270,19 +270,19 @@ onErrorCaptured((err, _instance, info) => {
             <span class="song-idx">{{ idx + 1 }}</span>
             <span class="song-title">{{ track.name }}</span>
           </div>
-          <button class="btn-icon-sm" @click="removeFromPlaylist(idx)" title="移除">✖</button>
+          <button class="btn-icon-sm" title="移除" @click="removeFromPlaylist(idx)">✖</button>
         </div>
       </div>
-      <div class="empty-hint" v-else>
+      <div v-else class="empty-hint">
         <p>播放列表为空</p>
         <p class="sub">从本地音乐中添加歌曲到播放队列</p>
       </div>
     </div>
 
     <!-- ---- Tab: 投播服务状态 ---- -->
-    <div class="tab-content" v-if="activeTab === 'stream'">
+    <div v-if="activeTab === 'stream'" class="tab-content">
       <div class="stream-list">
-        <div class="stream-card" v-for="svc in ['dlna', 'airplay', 'rtmp']" :key="svc">
+        <div v-for="svc in ['dlna', 'airplay', 'rtmp']" :key="svc" class="stream-card">
           <div class="stream-head">
             <span class="stream-name">{{ svc === 'dlna' ? 'DLNA / UPnP' : svc === 'airplay' ? 'AirPlay' : 'RTMP / HLS' }}</span>
             <span
@@ -302,7 +302,7 @@ onErrorCaptured((err, _instance, info) => {
     </div>
 
     <!-- ---- 底部播放栏 ---- -->
-    <div class="player-bar" v-if="showPlayerBar">
+    <div v-if="showPlayerBar" class="player-bar">
       <!-- 进度条：远程源不可拖动 -->
       <div
         class="bar-progress"
@@ -317,10 +317,10 @@ onErrorCaptured((err, _instance, info) => {
           <div class="bar-cover">{{ music.active_source === 'dlna' ? '📡' : music.active_source === 'airplay' ? '🍎' : '🎵' }}</div>
           <div class="bar-text">
             <!-- DLNA/AirPlay 播放时显示来源信息 -->
-            <div class="bar-title" v-if="music.active_source === 'dlna'">DLNA 推流播放中</div>
-            <div class="bar-title" v-else-if="music.active_source === 'airplay'">AirPlay 推流播放中</div>
-            <div class="bar-title" v-else-if="isRemoteSource && !music.active_source">推流播放中</div>
-            <div class="bar-title" v-else>{{ music.current_track?.name || "--" }}</div>
+            <div v-if="music.active_source === 'dlna'" class="bar-title">DLNA 推流播放中</div>
+            <div v-else-if="music.active_source === 'airplay'" class="bar-title">AirPlay 推流播放中</div>
+            <div v-else-if="isRemoteSource && !music.active_source" class="bar-title">推流播放中</div>
+            <div v-else class="bar-title">{{ music.current_track?.name || "--" }}</div>
             <div class="bar-time">
               <template v-if="isRemoteSource || music.active_source === 'dlna' || music.active_source === 'airplay'">
                 {{ formatTime(music.position) }}
@@ -335,12 +335,12 @@ onErrorCaptured((err, _instance, info) => {
         <div class="bar-ctrls">
           <!-- 远程源（DLNA/AirPlay）无法控制播放，不显示任何按钮 -->
           <template v-if="!isRemoteSource">
-            <button class="ctrl-btn-sm" @click="prevTrack" title="上一首">⏮</button>
-            <button class="ctrl-btn-sm play-btn-sm" @click="togglePlay" :title="music.status === 'playing' ? '暂停' : '播放'">
+            <button class="ctrl-btn-sm" title="上一首" @click="prevTrack">⏮</button>
+            <button class="ctrl-btn-sm play-btn-sm" :title="music.status === 'playing' ? '暂停' : '播放'" @click="togglePlay">
               {{ music.status === "playing" ? "⏸" : "▶️" }}
             </button>
-            <button class="ctrl-btn-sm" @click="nextTrack" title="下一首">⏭</button>
-            <button class="ctrl-btn-sm" @click="stopMusic" title="停止">⏹</button>
+            <button class="ctrl-btn-sm" title="下一首" @click="nextTrack">⏭</button>
+            <button class="ctrl-btn-sm" title="停止" @click="stopMusic">⏹</button>
           </template>
         </div>
         <div class="bar-volume">

@@ -193,41 +193,41 @@ function shortCandidate(cand: string): string {
       <div class="candidates-row">
         <div class="cand-col">
           <div class="cand-title">本地候选 ({{ localCandidates.length }})</div>
-          <div class="cand-list" v-if="localCandidates.length > 0">
-            <div class="cand-item" v-for="(c, i) in localCandidates" :key="'l'+i">
+          <div v-if="localCandidates.length > 0" class="cand-list">
+            <div v-for="(c, i) in localCandidates" :key="'l'+i" class="cand-item">
               {{ shortCandidate(c) }}
             </div>
           </div>
-          <div class="cand-empty" v-else>暂无</div>
+          <div v-else class="cand-empty">暂无</div>
         </div>
         <div class="cand-col">
           <div class="cand-title">远端候选 ({{ remoteCandidates.length }})</div>
-          <div class="cand-list" v-if="remoteCandidates.length > 0">
-            <div class="cand-item" v-for="(c, i) in remoteCandidates" :key="'r'+i">
+          <div v-if="remoteCandidates.length > 0" class="cand-list">
+            <div v-for="(c, i) in remoteCandidates" :key="'r'+i" class="cand-item">
               {{ shortCandidate(c) }}
             </div>
           </div>
-          <div class="cand-empty" v-else>暂无</div>
+          <div v-else class="cand-empty">暂无</div>
         </div>
       </div>
     </div>
 
-    <div class="monitor-section" v-if="devicesStore.currentDevice">
+    <div v-if="devicesStore.currentDevice" class="monitor-section">
       <div class="section-title">设备信息</div>
       <div class="monitor-grid">
         <div class="monitor-row">
           <span class="monitor-label">设备名称</span>
           <span class="monitor-value">{{ devicesStore.robotInfo?.name || devicesStore.currentDevice.name }}</span>
         </div>
-        <div class="monitor-row" v-if="devicesStore.robotInfo?.robot_id">
+        <div v-if="devicesStore.robotInfo?.robot_id" class="monitor-row">
           <span class="monitor-label">机器人 ID</span>
           <span class="monitor-value monospace">{{ devicesStore.robotInfo.robot_id }}</span>
         </div>
-        <div class="monitor-row" v-if="devicesStore.currentDevice.ip">
+        <div v-if="devicesStore.currentDevice.ip" class="monitor-row">
           <span class="monitor-label">机器人 IP</span>
           <span class="monitor-value monospace">{{ devicesStore.currentDevice.ip }}:{{ devicesStore.currentDevice.port }}</span>
         </div>
-        <div class="monitor-row" v-if="devicesStore.robotInfo?.features?.length">
+        <div v-if="devicesStore.robotInfo?.features?.length" class="monitor-row">
           <span class="monitor-label">功能列表</span>
           <span class="monitor-value features">{{ devicesStore.robotInfo.features.join(', ') }}</span>
         </div>
