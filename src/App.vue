@@ -23,6 +23,7 @@ import MapView from "@/components/views/MapView.vue";
 import GalleryView from "@/components/views/GalleryView.vue";
 import SettingsView from "@/components/views/SettingsView.vue";
 import ProcessManagerView from "@/components/views/ProcessManagerView.vue";
+import MusicView from "@/components/views/MusicView.vue";
 import AddDeviceDialog from "@/components/dialogs/AddDeviceDialog.vue";
 import SwitchDeviceDialog from "@/components/dialogs/SwitchDeviceDialog.vue";
 import OpsConfirmDialog from "@/components/dialogs/OpsConfirmDialog.vue";
@@ -396,6 +397,7 @@ const viewsMap: Record<ViewName, unknown> = {
   gallery: GalleryView,
   settings: SettingsView,
   processManager: ProcessManagerView,
+  music: MusicView,
 };
 </script>
 

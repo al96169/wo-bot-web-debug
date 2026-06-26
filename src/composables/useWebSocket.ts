@@ -3,7 +3,7 @@ import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
 import { resolveWebRTCAnswer, handleWebRTCIceCandidate } from "./useWebRTC";
-import type { DanceInfo, Module, ServiceInfo, Software } from "../types";
+import type { DanceInfo, Module, MusicStatus, MusicTrack, ServiceInfo, Software } from "../types";
 
 /* ============================================================
  * wo-bot-web-debug - WebSocket + WebRTC 通信层
@@ -156,14 +156,24 @@ export function setAuthToken(token: string): void {
   _token = token;
 }
 
+/** 最大排队消息数量，防止断连时内存泄漏 */
+const MAX_PENDING_QUEUE = 50;
+
 // 通用发送：优先 DataChannel；DC 未就绪时用 WebSocket；都不行则暂存队列
-function _send(frame: WsMsg): void {
+function _send(frame: WsMsg, forceWs = false): void {
   const payload = JSON.stringify(frame);
-  if (_dc && _dc.readyState === "open") {
+  if (!forceWs && _dc && _dc.readyState === "open") {
+    console.log("[WS.send] via DataChannel:", frame.type, frame.data);
     _dc.send(payload);
   } else if (_ws && _ws.readyState === WebSocket.OPEN) {
+    console.log("[WS.send] via WebSocket:", frame.type, frame.data);
     _ws.send(payload);
   } else {
+    if (_pendingQueue.length >= MAX_PENDING_QUEUE) {
+      // 队列过长，丢弃最旧的消息
+      _pendingQueue.shift();
+    }
+    console.warn("[WS.send] queued (pending):", frame.type, frame.data, "| dc:", !!_dc, _dc?.readyState, "ws:", !!_ws, _ws?.readyState);
     _pendingQueue.push(payload);
   }
 }
@@ -502,6 +512,9 @@ export function useWebSocket() {
       }
       case "service_control_ack": {
         robotStore.addLog("info", "Service", `${data.service_id} → ${data.action} (${data.status})`);
+        if (Array.isArray(data.services) && data.services.length > 0) {
+          robotStore.setServices(data.services as ServiceInfo[]);
+        }
         break;
       }
       case "dance_list": {
@@ -650,6 +663,54 @@ export function useWebSocket() {
         appStore.showToast("WiFi 已断开", "info");
         robotStore.addLog("info", "WiFi", "WiFi 已断开");
         break;
+
+      // ---- 音乐播放 ----
+      case "music_status": {
+        if ((data as Record<string, unknown>).error) {
+          appStore.showToast(`音乐播放错误: ${String((data as Record<string, unknown>).error)}`, "error");
+          robotStore.setMusicStatus({ ...robotStore.musicStatus, status: "stopped" });
+        } else {
+          robotStore.setMusicStatus(data as unknown as MusicStatus);
+        }
+        break;
+      }
+      case "music_action": {
+        // 直接命令响应（play/pause/next/prev/stop/seek），服务不可用时返回此类型
+        // 合并到 musicStatus 提供即时反馈（#16 解决按钮点击无反应）
+        const actionData = data as Record<string, unknown>;
+        robotStore.setMusicStatus({
+          ...robotStore.musicStatus,
+          status: (actionData.status as MusicStatus["status"]) ?? robotStore.musicStatus.status,
+          volume: typeof actionData.volume === "number" ? actionData.volume : robotStore.musicStatus.volume,
+          position: typeof actionData.position === "number" ? actionData.position : robotStore.musicStatus.position,
+          current_track: (actionData.current_track as MusicTrack | null) ?? robotStore.musicStatus.current_track,
+          playlist: Array.isArray(actionData.playlist) ? (actionData.playlist as MusicTrack[]) : robotStore.musicStatus.playlist,
+          active_source: (actionData.active_source as string | null) ?? robotStore.musicStatus.active_source,
+        });
+        break;
+      }
+      case "music_list": {
+        if (Array.isArray((data as Record<string, unknown>).songs)) {
+          robotStore.setMusicSongs((data as Record<string, unknown>).songs as unknown as MusicTrack[]);
+        }
+        break;
+      }
+      case "music_volume": {
+        const volStatus = { ...robotStore.musicStatus, volume: Number((data as Record<string, unknown>).volume ?? 75) };
+        robotStore.setMusicStatus(volStatus);
+        break;
+      }
+      case "music_stream":
+      case "music_playlist": {
+        if (data.playlist) {
+          const ms = { ...robotStore.musicStatus, playlist: data.playlist as unknown as MusicTrack[] };
+          robotStore.setMusicStatus(ms);
+        } else if (typeof data.streaming === "boolean") {
+          const ms = { ...robotStore.musicStatus, streaming: data.streaming as boolean, stream_type: String(data.stream_type ?? null) };
+          robotStore.setMusicStatus(ms);
+        }
+        break;
+      }
     }
     // 通知所有消息监听器
     _messageListeners.forEach((fn) => {
@@ -738,6 +799,9 @@ export function useWebSocket() {
   function sendServiceControl(serviceId: string, action: string): void {
     _send({ type: "service_control", data: { service_id: serviceId, action } });
   }
+  function sendMusicCommand(cmd: string, params: Record<string, unknown> = {}): void {
+    _send({ type: cmd, data: params });
+  }
 
   function cleanup(): void {
     disconnect();
@@ -777,5 +841,6 @@ export function useWebSocket() {
     sendWifiDisconnect,
     sendServiceStatus,
     sendServiceControl,
+    sendMusicCommand,
   };
 }

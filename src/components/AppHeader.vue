@@ -68,6 +68,7 @@ const navItems = [
   { view: "dance", label: "💃 跳舞" },
   { view: "map", label: "🗺️ 地图" },
   { view: "gallery", label: "🖼️ 图库" },
+  { view: "music", label: "🎵 音乐" },
 ] as const;
 
 const currentView = computed(() => appStore.currentView);

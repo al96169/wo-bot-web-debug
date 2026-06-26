@@ -6,7 +6,7 @@ import type { ToggleKey } from "@/types";
 
 const appStore = useAppStore();
 const robotStore = useRobotStore();
-const { sendDeviceControl, sendEmergencyStop } = useWebSocket();
+const { sendDeviceControl, sendEmergencyStop, sendMusicCommand } = useWebSocket();
 
 const actionItems: { action: ToggleKey | "emergency"; label: string; cssClass: string; cmdType: string }[] = [
   { action: "find", label: "🔔 寻找设备", cssClass: "toggle", cmdType: "find" },
@@ -63,10 +63,12 @@ function handleVolumeInput(e: Event) {
 function handleVolumeChange(e: Event) {
   const target = e.target as HTMLInputElement;
   const val = Number(target.value);
+  appStore.volume = val;
   if (volTimer) clearTimeout(volTimer);
   volTimer = setTimeout(() => {
     robotStore.addCmdLog({ time: textTime(), direction: "send", type: "volume", data: `音量 → ${val}%` });
     robotStore.addLog("info", "QuickAction", `音量调节: ${val}%`);
+    sendMusicCommand("music_volume", { volume: val });
   }, 300);
 }
 </script>

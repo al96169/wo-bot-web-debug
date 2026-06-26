@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
+import type { DanceInfo, MusicStatus, MusicTrack, ServiceInfo } from "../types";
 import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime } from "./useWebSocket";
 
 /* ============================================================
@@ -527,8 +528,15 @@ export function useWebRTC() {
     // 收到任何 DataChannel 消息，说明通道已通
     if (!appStore.sshConnected) appStore.setSSHConnected(true);
 
-    const data = msg.data ?? {};
-    switch (msg.type) {
+    // 解包 response 信封：后端 DataChannel 响应格式为 { type: "response", data: { type: "xxx", data: {...} } }
+    let data = msg.data ?? {};
+    let msgType = msg.type;
+    if (msgType === "response" && typeof data === "object" && "type" in data) {
+      msgType = String((data as Record<string, unknown>).type);
+      data = ((data as Record<string, unknown>).data as Record<string, unknown>) ?? {};
+    }
+
+    switch (msgType) {
       case "status": {
         const batt = (data.battery ?? {}) as Record<string, unknown>;
         const sys = (data.system ?? {}) as Record<string, unknown>;
@@ -661,7 +669,88 @@ export function useWebRTC() {
         appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error");
         robotStore.addLog("error", "Remote", String(data.message ?? ""));
         break;
+
+      // ---- 音乐播放 (DataChannel 路径) ----
+      case "music_status": {
+        console.log("[DC.msg] music_status:", JSON.stringify(data).slice(0, 200));
+        if ((data as Record<string, unknown>).error) {
+          appStore.showToast(`音乐播放错误: ${String((data as Record<string, unknown>).error)}`, "error");
+          // 把 status 标为 stopped，保留其他字段防止面板空白
+          robotStore.setMusicStatus({ ...robotStore.musicStatus, status: "stopped" });
+        } else {
+          robotStore.setMusicStatus(data as unknown as MusicStatus);
+        }
+        break;
+      }
+      case "music_list": {
+        const songsArr = (data as Record<string, unknown>).songs;
+        console.log("[DC.msg] music_list, songs:", Array.isArray(songsArr) ? (songsArr as Array<unknown>).length : "N/A");
+        if (Array.isArray(songsArr)) {
+          robotStore.setMusicSongs(songsArr as unknown as MusicTrack[]);
+        }
+        break;
+      }
+      case "music_volume": {
+        const volStatus = { ...robotStore.musicStatus, volume: Number((data as Record<string, unknown>).volume ?? 75) };
+        robotStore.setMusicStatus(volStatus);
+        break;
+      }
+      case "music_stream":
+      case "music_playlist": {
+        if (data.playlist) {
+          const ms = { ...robotStore.musicStatus, playlist: data.playlist as unknown as MusicTrack[] };
+          robotStore.setMusicStatus(ms);
+        } else if (typeof data.streaming === "boolean") {
+          const ms = { ...robotStore.musicStatus, streaming: data.streaming as boolean, stream_type: String(data.stream_type ?? null) };
+          robotStore.setMusicStatus(ms);
+        }
+        break;
+      }
+
+      // ---- 服务管理 (DataChannel 路径) ----
+      case "service_status": {
+        if (Array.isArray(data.services)) {
+          robotStore.setServices(data.services as ServiceInfo[]);
+        }
+        break;
+      }
+      case "service_control_ack": {
+        robotStore.addLog("info", "Service", `${data.service_id} → ${data.action} (${data.status})`);
+        if (Array.isArray(data.services) && data.services.length > 0) {
+          robotStore.setServices(data.services as ServiceInfo[]);
+        }
+        break;
+      }
+      case "service_message": {
+        const svcMsg = data as Record<string, unknown>;
+        robotStore.addMessage({
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          subject: String(svcMsg.subject ?? "服务通知"),
+          time: Date.now(),
+          summary: String(svcMsg.summary ?? ""),
+          body: String(svcMsg.body ?? ""),
+          read: false,
+          source: String(svcMsg.source ?? "service_manager"),
+          severity: (["info", "warning", "error"].includes(String(svcMsg.severity)) ? svcMsg.severity : "info") as "info" | "warning" | "error",
+        });
+        break;
+      }
+
+      // ---- 舞蹈 (DataChannel 路径) ----
+      case "dance_list": {
+        robotStore.setDances(Array.isArray(data.dances) ? (data.dances as DanceInfo[]) : []);
+        break;
+      }
+      case "dance_status": {
+        robotStore.setDanceStatus(
+          String(data.status ?? "stopped") as "stopped" | "playing" | "paused",
+          data.dance_id != null ? String(data.dance_id) : null,
+          typeof data.progress === "number" ? data.progress : undefined,
+        );
+        break;
+      }
       default:
+        console.log("[DC.msg] unhandled:", msgType, JSON.stringify(data).slice(0, 200));
         robotStore.addLog("debug", "DataChannel", `收到消息: ${msg.type}`);
         break;
     }

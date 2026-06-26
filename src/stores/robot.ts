@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import type { DanceInfo, GalleryItem, LogEntry, Message, Module, ServiceInfo, Software } from "../types";
+import type { DanceInfo, GalleryItem, LogEntry, Message, Module, MusicStatus, MusicTrack, ServiceInfo, Software } from "../types";
 
 /* ============================================================
  * wo-bot-vue - 机器人数据 (Pinia Store)
@@ -141,6 +141,22 @@ export const useRobotStore = defineStore("robot", {
     danceCurrentId: null as string | null,
     /** 播放进度 0~1 */
     danceProgress: 0 as number,
+
+    /** 音乐播放状态 */
+    musicStatus: {
+      status: "stopped",
+      volume: 75,
+      position: 0,
+      current_track: null,
+      playlist: [],
+      streaming: false,
+      stream_type: null,
+      active_services: [],
+      active_source: null,
+    } as MusicStatus,
+
+    /** 音乐歌曲列表 */
+    musicSongs: [] as MusicTrack[],
   }),
 
   getters: {
@@ -333,6 +349,16 @@ export const useRobotStore = defineStore("robot", {
       this.danceStatus = status;
       if (danceId !== undefined) this.danceCurrentId = danceId;
       if (progress !== undefined) this.danceProgress = progress;
+    },
+
+    /* ---- 音乐 ---- */
+
+    setMusicStatus(status: MusicStatus): void {
+      this.musicStatus = status;
+    },
+
+    setMusicSongs(songs: MusicTrack[]): void {
+      this.musicSongs = songs;
     },
   },
 });

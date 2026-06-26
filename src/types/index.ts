@@ -166,6 +166,32 @@ export interface DanceInfo {
 /** 主题 */
 export type Theme = "dark" | "light" | "auto";
 
+/** 音乐曲目 */
+export interface MusicTrack {
+  name: string;
+  filename: string;
+  path: string;
+  size: number;
+  format: string;
+  /** ffprobe 检测的实际时长（秒），0 表示未检测 */
+  duration?: number;
+}
+
+/** 音乐播放状态 */
+export interface MusicStatus {
+  status: "stopped" | "playing" | "paused";
+  volume: number;
+  position: number;
+  current_track: MusicTrack | null;
+  playlist: MusicTrack[];
+  streaming: boolean;
+  stream_type: string | null;
+  /** 当前活跃的推流服务列表: "dlna" | "airplay" | "rtmp" */
+  active_services: string[];
+  /** 当前活跃播放源: "local" | "dlna" | "airplay" | null */
+  active_source: string | null;
+}
+
 /** 视图名称 */
 export type ViewName =
   | "quickActions"
@@ -177,6 +203,7 @@ export type ViewName =
   | "dance"
   | "map"
   | "gallery"
+  | "music"
   | "settings"
   | "processManager";
 
