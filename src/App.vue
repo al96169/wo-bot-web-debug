@@ -438,10 +438,7 @@ const viewsMap: Record<ViewName, unknown> = {
       @close="handleTimeoutClose"
       @retry="handleRetryConnect"
     />
-    <VersionMismatchDialog
-      v-if="showVersionMismatch"
-      @close="showVersionMismatch = false"
-    />
+    <VersionMismatchDialog v-if="showVersionMismatch" @close="showVersionMismatch = false" />
 
     <!-- Toast -->
     <Transition name="toast">

@@ -114,8 +114,25 @@ function shortCandidate(cand: string): string {
         <div class="monitor-row">
           <span class="monitor-label">连接状态</span>
           <span class="monitor-value">
-            <span :class="['state-dot', appStore.connection === 'connected' ? 'dot-ok' : appStore.connection === 'connecting' ? 'dot-warn' : 'dot-err']"></span>
-            {{ appStore.connection === 'connected' ? '已连接' : appStore.connection === 'connecting' ? '连接中' : appStore.connection === 'error' ? '错误' : '未连接' }}
+            <span
+              :class="[
+                'state-dot',
+                appStore.connection === 'connected'
+                  ? 'dot-ok'
+                  : appStore.connection === 'connecting'
+                    ? 'dot-warn'
+                    : 'dot-err',
+              ]"
+            ></span>
+            {{
+              appStore.connection === "connected"
+                ? "已连接"
+                : appStore.connection === "connecting"
+                  ? "连接中"
+                  : appStore.connection === "error"
+                    ? "错误"
+                    : "未连接"
+            }}
           </span>
         </div>
         <div class="monitor-row">
@@ -127,7 +144,7 @@ function shortCandidate(cand: string): string {
         </div>
         <div class="monitor-row">
           <span class="monitor-label">目标地址</span>
-          <span class="monitor-value monospace">{{ connectedIp.value || '--' }}:{{ connectedPort.value || '--' }}</span>
+          <span class="monitor-value monospace">{{ connectedIp || "--" }}:{{ connectedPort || "--" }}</span>
         </div>
         <div class="monitor-row">
           <span class="monitor-label">协议版本</span>
@@ -139,7 +156,13 @@ function shortCandidate(cand: string): string {
         </div>
         <div class="monitor-row">
           <span class="monitor-label">上次心跳</span>
-          <span class="monitor-value">{{ lastPingAge >= 0 ? (lastPingAge < 1000 ? lastPingAge + 'ms 前' : (lastPingAge / 1000).toFixed(1) + 's 前') : '--' }}</span>
+          <span class="monitor-value">{{
+            lastPingAge >= 0
+              ? lastPingAge < 1000
+                ? lastPingAge + "ms 前"
+                : (lastPingAge / 1000).toFixed(1) + "s 前"
+              : "--"
+          }}</span>
         </div>
       </div>
     </div>
@@ -165,7 +188,7 @@ function shortCandidate(cand: string): string {
           <span class="monitor-label">ICE 收集</span>
           <span class="monitor-value">
             <span :class="['state-dot', stateClass(iceGatheringState)]"></span>
-            {{ stateLabel(iceGatheringState) }}{{ gatheringCompleted ? ' ✓' : '' }}
+            {{ stateLabel(iceGatheringState) }}{{ gatheringCompleted ? " ✓" : "" }}
           </span>
         </div>
         <div class="monitor-row">
@@ -194,7 +217,7 @@ function shortCandidate(cand: string): string {
         <div class="cand-col">
           <div class="cand-title">本地候选 ({{ localCandidates.length }})</div>
           <div v-if="localCandidates.length > 0" class="cand-list">
-            <div v-for="(c, i) in localCandidates" :key="'l'+i" class="cand-item">
+            <div v-for="(c, i) in localCandidates" :key="'l' + i" class="cand-item">
               {{ shortCandidate(c) }}
             </div>
           </div>
@@ -203,7 +226,7 @@ function shortCandidate(cand: string): string {
         <div class="cand-col">
           <div class="cand-title">远端候选 ({{ remoteCandidates.length }})</div>
           <div v-if="remoteCandidates.length > 0" class="cand-list">
-            <div v-for="(c, i) in remoteCandidates" :key="'r'+i" class="cand-item">
+            <div v-for="(c, i) in remoteCandidates" :key="'r' + i" class="cand-item">
               {{ shortCandidate(c) }}
             </div>
           </div>
@@ -225,11 +248,13 @@ function shortCandidate(cand: string): string {
         </div>
         <div v-if="devicesStore.currentDevice.ip" class="monitor-row">
           <span class="monitor-label">机器人 IP</span>
-          <span class="monitor-value monospace">{{ devicesStore.currentDevice.ip }}:{{ devicesStore.currentDevice.port }}</span>
+          <span class="monitor-value monospace"
+            >{{ devicesStore.currentDevice.ip }}:{{ devicesStore.currentDevice.port }}</span
+          >
         </div>
         <div v-if="devicesStore.robotInfo?.features?.length" class="monitor-row">
           <span class="monitor-label">功能列表</span>
-          <span class="monitor-value features">{{ devicesStore.robotInfo.features.join(', ') }}</span>
+          <span class="monitor-value features">{{ devicesStore.robotInfo.features.join(", ") }}</span>
         </div>
       </div>
     </div>
@@ -254,7 +279,7 @@ function shortCandidate(cand: string): string {
 .monitor-section {
   margin-bottom: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-light, rgba(128,128,128,0.15));
+  border-bottom: 1px solid var(--border-light, rgba(128, 128, 128, 0.15));
 }
 .monitor-section:last-child {
   margin-bottom: 0;
@@ -285,7 +310,7 @@ function shortCandidate(cand: string): string {
   border-radius: var(--radius-sm);
 }
 .monitor-row:nth-child(even) {
-  background: var(--bg-hover, rgba(128,128,128,0.05));
+  background: var(--bg-hover, rgba(128, 128, 128, 0.05));
 }
 
 .monitor-label {
@@ -305,7 +330,7 @@ function shortCandidate(cand: string): string {
 }
 
 .monospace {
-  font-family: var(--font-mono, 'SF Mono', 'Fira Code', 'Consolas', monospace);
+  font-family: var(--font-mono, "SF Mono", "Fira Code", "Consolas", monospace);
   font-size: 11px;
 }
 
@@ -359,7 +384,7 @@ function shortCandidate(cand: string): string {
 }
 .cand-item {
   font-size: 10px;
-  font-family: var(--font-mono, 'SF Mono', 'Fira Code', 'Consolas', monospace);
+  font-family: var(--font-mono, "SF Mono", "Fira Code", "Consolas", monospace);
   padding: 2px 4px;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -368,7 +393,7 @@ function shortCandidate(cand: string): string {
   border-radius: var(--radius-sm);
 }
 .cand-item:nth-child(odd) {
-  background: var(--bg-hover, rgba(128,128,128,0.05));
+  background: var(--bg-hover, rgba(128, 128, 128, 0.05));
 }
 .cand-empty {
   font-size: 10px;

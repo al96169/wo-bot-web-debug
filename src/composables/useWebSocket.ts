@@ -173,7 +173,17 @@ function _send(frame: WsMsg, forceWs = false): void {
       // 队列过长，丢弃最旧的消息
       _pendingQueue.shift();
     }
-    console.warn("[WS.send] queued (pending):", frame.type, frame.data, "| dc:", !!_dc, _dc?.readyState, "ws:", !!_ws, _ws?.readyState);
+    console.warn(
+      "[WS.send] queued (pending):",
+      frame.type,
+      frame.data,
+      "| dc:",
+      !!_dc,
+      _dc?.readyState,
+      "ws:",
+      !!_ws,
+      _ws?.readyState,
+    );
     _pendingQueue.push(payload);
   }
 }
@@ -506,7 +516,10 @@ export function useWebSocket() {
           body: String(svcMsg.body ?? ""),
           read: false,
           source: String(svcMsg.source ?? "service_manager"),
-          severity: (["info", "warning", "error"].includes(String(svcMsg.severity)) ? svcMsg.severity : "info") as "info" | "warning" | "error",
+          severity: (["info", "warning", "error"].includes(String(svcMsg.severity)) ? svcMsg.severity : "info") as
+            | "info"
+            | "warning"
+            | "error",
         });
         break;
       }
@@ -684,7 +697,9 @@ export function useWebSocket() {
           volume: typeof actionData.volume === "number" ? actionData.volume : robotStore.musicStatus.volume,
           position: typeof actionData.position === "number" ? actionData.position : robotStore.musicStatus.position,
           current_track: (actionData.current_track as MusicTrack | null) ?? robotStore.musicStatus.current_track,
-          playlist: Array.isArray(actionData.playlist) ? (actionData.playlist as MusicTrack[]) : robotStore.musicStatus.playlist,
+          playlist: Array.isArray(actionData.playlist)
+            ? (actionData.playlist as MusicTrack[])
+            : robotStore.musicStatus.playlist,
           active_source: (actionData.active_source as string | null) ?? robotStore.musicStatus.active_source,
         });
         break;
@@ -706,7 +721,11 @@ export function useWebSocket() {
           const ms = { ...robotStore.musicStatus, playlist: data.playlist as unknown as MusicTrack[] };
           robotStore.setMusicStatus(ms);
         } else if (typeof data.streaming === "boolean") {
-          const ms = { ...robotStore.musicStatus, streaming: data.streaming as boolean, stream_type: String(data.stream_type ?? null) };
+          const ms = {
+            ...robotStore.musicStatus,
+            streaming: data.streaming as boolean,
+            stream_type: String(data.stream_type ?? null),
+          };
           robotStore.setMusicStatus(ms);
         }
         break;

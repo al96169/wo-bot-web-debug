@@ -13,9 +13,7 @@ const music = computed(() => robotStore.musicStatus);
 const songs = computed(() => robotStore.musicSongs);
 const isWsConnected = computed(() => appStore.connection === "connected");
 const isMusicServiceRunning = computed(() =>
-  robotStore.services.some(
-    (s) => s.service_id === "music_player" && s.status === "running"
-  )
+  robotStore.services.some((s) => s.service_id === "music_player" && s.status === "running"),
 );
 
 // 标签页状态
@@ -28,7 +26,9 @@ let toastTimer: ReturnType<typeof setTimeout> | null = null;
 function showToast(msg: string) {
   toastMsg.value = msg;
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toastMsg.value = ""; }, 2000);
+  toastTimer = setTimeout(() => {
+    toastMsg.value = "";
+  }, 2000);
 }
 
 // 是否显示底部播放栏（本地播放需要 current_track；推流播放只需要 status 为 playing）
@@ -196,26 +196,14 @@ onErrorCaptured((err, _instance, info) => {
 
     <!-- ---- Tab 导航 ---- -->
     <div class="tab-nav">
-      <button
-        class="tab-btn"
-        :class="{ active: activeTab === 'local' }"
-        @click="activeTab = 'local'"
-      >
+      <button class="tab-btn" :class="{ active: activeTab === 'local' }" @click="activeTab = 'local'">
         🎵 本地音乐
       </button>
-      <button
-        class="tab-btn"
-        :class="{ active: activeTab === 'playlist' }"
-        @click="activeTab = 'playlist'"
-      >
+      <button class="tab-btn" :class="{ active: activeTab === 'playlist' }" @click="activeTab = 'playlist'">
         📋 播放列表
         <span v-if="music.playlist?.length" class="tab-badge">{{ music.playlist.length }}</span>
       </button>
-      <button
-        class="tab-btn"
-        :class="{ active: activeTab === 'stream' }"
-        @click="activeTab = 'stream'"
-      >
+      <button class="tab-btn" :class="{ active: activeTab === 'stream' }" @click="activeTab = 'stream'">
         📡 投播服务
       </button>
     </div>
@@ -235,9 +223,7 @@ onErrorCaptured((err, _instance, info) => {
         >
           <div class="song-main" @click="playSong(song.filename)">
             <span class="song-icon">{{
-              music.current_track?.filename === song.filename && music.status === "playing"
-                ? "🔊"
-                : "🎵"
+              music.current_track?.filename === song.filename && music.status === "playing" ? "🔊" : "🎵"
             }}</span>
             <div class="song-text">
               <span class="song-title">{{ song.name }}</span>
@@ -284,12 +270,11 @@ onErrorCaptured((err, _instance, info) => {
       <div class="stream-list">
         <div v-for="svc in ['dlna', 'airplay', 'rtmp']" :key="svc" class="stream-card">
           <div class="stream-head">
-            <span class="stream-name">{{ svc === 'dlna' ? 'DLNA / UPnP' : svc === 'airplay' ? 'AirPlay' : 'RTMP / HLS' }}</span>
-            <span
-              class="stream-status"
-              :class="{ online: (music.active_services || []).includes(svc) }"
-            >
-              {{ (music.active_services || []).includes(svc) ? '● 运行中' : '○ 未启动' }}
+            <span class="stream-name">{{
+              svc === "dlna" ? "DLNA / UPnP" : svc === "airplay" ? "AirPlay" : "RTMP / HLS"
+            }}</span>
+            <span class="stream-status" :class="{ online: (music.active_services || []).includes(svc) }">
+              {{ (music.active_services || []).includes(svc) ? "● 运行中" : "○ 未启动" }}
             </span>
           </div>
           <div class="stream-detail">
@@ -304,17 +289,15 @@ onErrorCaptured((err, _instance, info) => {
     <!-- ---- 底部播放栏 ---- -->
     <div v-if="showPlayerBar" class="player-bar">
       <!-- 进度条：远程源不可拖动 -->
-      <div
-        class="bar-progress"
-        :class="{ readonly: isRemoteSource }"
-        @click="!isRemoteSource && seekMusic($event)"
-      >
+      <div class="bar-progress" :class="{ readonly: isRemoteSource }" @click="!isRemoteSource && seekMusic($event)">
         <div class="bar-fill" :style="{ width: progressPercent + '%' }"></div>
       </div>
       <!-- 信息 + 控制 -->
       <div class="bar-row">
         <div class="bar-info">
-          <div class="bar-cover">{{ music.active_source === 'dlna' ? '📡' : music.active_source === 'airplay' ? '🍎' : '🎵' }}</div>
+          <div class="bar-cover">
+            {{ music.active_source === "dlna" ? "📡" : music.active_source === "airplay" ? "🍎" : "🎵" }}
+          </div>
           <div class="bar-text">
             <!-- DLNA/AirPlay 播放时显示来源信息 -->
             <div v-if="music.active_source === 'dlna'" class="bar-title">DLNA 推流播放中</div>
@@ -324,11 +307,11 @@ onErrorCaptured((err, _instance, info) => {
             <div class="bar-time">
               <template v-if="isRemoteSource || music.active_source === 'dlna' || music.active_source === 'airplay'">
                 {{ formatTime(music.position) }}
-                <span class="source-tag">{{ music.active_source === 'dlna' ? 'DLNA' : music.active_source === 'airplay' ? 'AirPlay' : '推流' }}</span>
+                <span class="source-tag">{{
+                  music.active_source === "dlna" ? "DLNA" : music.active_source === "airplay" ? "AirPlay" : "推流"
+                }}</span>
               </template>
-              <template v-else>
-                {{ formatTime(music.position) }} / {{ formatTime(displayDuration) }}
-              </template>
+              <template v-else> {{ formatTime(music.position) }} / {{ formatTime(displayDuration) }} </template>
             </div>
           </div>
         </div>
@@ -336,7 +319,11 @@ onErrorCaptured((err, _instance, info) => {
           <!-- 远程源（DLNA/AirPlay）无法控制播放，不显示任何按钮 -->
           <template v-if="!isRemoteSource">
             <button class="ctrl-btn-sm" title="上一首" @click="prevTrack">⏮</button>
-            <button class="ctrl-btn-sm play-btn-sm" :title="music.status === 'playing' ? '暂停' : '播放'" @click="togglePlay">
+            <button
+              class="ctrl-btn-sm play-btn-sm"
+              :title="music.status === 'playing' ? '暂停' : '播放'"
+              @click="togglePlay"
+            >
               {{ music.status === "playing" ? "⏸" : "▶️" }}
             </button>
             <button class="ctrl-btn-sm" title="下一首" @click="nextTrack">⏭</button>

@@ -329,7 +329,11 @@ onUnmounted(() => {
             <div v-if="!isConnected && !hasDeviceSelected" class="ops-menu-empty">无可用操作</div>
           </div>
         </div>
-        <button class="icon-btn" title="切换主题 ({{ appStore.theme === 'auto' ? '跟随系统' : appStore.theme === 'dark' ? '深色' : '明亮' }})" @click="appStore.toggleTheme()">
+        <button
+          class="icon-btn"
+          title="切换主题 ({{ appStore.theme === 'auto' ? '跟随系统' : appStore.theme === 'dark' ? '深色' : '明亮' }})"
+          @click="appStore.toggleTheme()"
+        >
           <!-- 跟随系统 -->
           <svg v-if="appStore.theme === 'auto'" viewBox="0 0 24 24" width="18" height="18">
             <path

@@ -11,13 +11,9 @@ const { sendServiceControl } = useWebSocket();
 
 const services = computed(() => robotStore.services);
 
-const mainService = computed<ServiceInfo | undefined>(() =>
-  services.value.find((s) => s.service_id === "main"),
-);
+const mainService = computed<ServiceInfo | undefined>(() => services.value.find((s) => s.service_id === "main"));
 
-const subServices = computed(() =>
-  services.value.filter((s) => s.service_id !== "main"),
-);
+const subServices = computed(() => services.value.filter((s) => s.service_id !== "main"));
 
 function formatUptime(seconds: number): string {
   if (seconds <= 0) return "--";
@@ -123,15 +119,8 @@ function handleRestart(serviceId: string): void {
     <!-- 子服务列表 -->
     <div class="pm-section">
       <h3 class="pm-section-title">子服务 ({{ subServices.length }})</h3>
-      <div v-if="subServices.length === 0" class="pm-empty">
-        暂无子服务数据
-      </div>
-      <div
-        v-for="svc in subServices"
-        :key="svc.service_id"
-        class="pm-card"
-        :class="statusClass(svc.status)"
-      >
+      <div v-if="subServices.length === 0" class="pm-empty">暂无子服务数据</div>
+      <div v-for="svc in subServices" :key="svc.service_id" class="pm-card" :class="statusClass(svc.status)">
         <div class="pm-card-header">
           <div class="pm-card-name">
             <span class="pm-dot"></span>
@@ -155,11 +144,7 @@ function handleRestart(serviceId: string): void {
             >
               ■
             </button>
-            <button
-              class="pm-action-btn pm-action-restart"
-              title="重启"
-              @click="handleRestart(svc.service_id)"
-            >
+            <button class="pm-action-btn pm-action-restart" title="重启" @click="handleRestart(svc.service_id)">
               ↻
             </button>
           </div>
@@ -314,8 +299,13 @@ function handleRestart(serviceId: string): void {
   background: var(--danger);
 }
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 .pm-name {
   font-weight: 600;

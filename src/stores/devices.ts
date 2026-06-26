@@ -138,9 +138,7 @@ export const useDevicesStore = defineStore("devices", {
       console.log("[DevicesStore] setCurrentDevice:", device?.name, device?.id, device?.ip);
       // 如果设备不在列表中，自动添加
       if (device) {
-        const exists = this.devices.some(
-          (d) => d.id === device.id || (d.ip === device.ip && d.port === device.port),
-        );
+        const exists = this.devices.some((d) => d.id === device.id || (d.ip === device.ip && d.port === device.port));
         if (!exists) {
           console.log("[DevicesStore] setCurrentDevice: 设备不在列表中，自动添加");
           this.devices.push(device);

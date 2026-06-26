@@ -1,5 +1,15 @@
 import { defineStore } from "pinia";
-import type { DanceInfo, GalleryItem, LogEntry, Message, Module, MusicStatus, MusicTrack, ServiceInfo, Software } from "../types";
+import type {
+  DanceInfo,
+  GalleryItem,
+  LogEntry,
+  Message,
+  Module,
+  MusicStatus,
+  MusicTrack,
+  ServiceInfo,
+  Software,
+} from "../types";
 
 /* ============================================================
  * wo-bot-vue - 机器人数据 (Pinia Store)

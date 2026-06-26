@@ -19,7 +19,18 @@ const {
   sendGimbalCenter,
   requestCameraStatus,
 } = useWebSocket();
-const { videoStream0, videoStream1, webrtcState, iceConnectionState, iceGatheringState, connectionState, signalingState, dcReadyState, localCandidates, remoteCandidates } = useWebRTC();
+const {
+  videoStream0,
+  videoStream1,
+  webrtcState,
+  iceConnectionState,
+  iceGatheringState,
+  connectionState,
+  signalingState,
+  dcReadyState,
+  localCandidates,
+  remoteCandidates,
+} = useWebRTC();
 
 // 云台功能是否可用（服务端 features 包含 "gimbal"）
 const gimbalAvailable = computed(() => getRemoteFeatures().includes("gimbal"));
@@ -69,7 +80,9 @@ function bindVideoEvents(videoEl: HTMLVideoElement, idx: 0 | 1, stream: MediaStr
   unbindVideoEvents(videoEl, idx);
 
   const onStalled = () => {
-    console.warn(`[Video] cam${idx} stalled, currentTime:${videoEl.currentTime}, paused:${videoEl.paused}, ready:${videoEl.readyState}, network:${videoEl.networkState}`);
+    console.warn(
+      `[Video] cam${idx} stalled, currentTime:${videoEl.currentTime}, paused:${videoEl.paused}, ready:${videoEl.readyState}, network:${videoEl.networkState}`,
+    );
     // 尝试恢复：重新绑定 srcObject
     if (videoEl.srcObject) {
       videoEl.srcObject = stream;
@@ -77,23 +90,39 @@ function bindVideoEvents(videoEl: HTMLVideoElement, idx: 0 | 1, stream: MediaStr
     }
   };
   const onWaiting = () => {
-    console.warn(`[Video] cam${idx} waiting, currentTime:${videoEl.currentTime}, paused:${videoEl.paused}, ready:${videoEl.readyState}, network:${videoEl.networkState}`);
+    console.warn(
+      `[Video] cam${idx} waiting, currentTime:${videoEl.currentTime}, paused:${videoEl.paused}, ready:${videoEl.readyState}, network:${videoEl.networkState}`,
+    );
   };
 
   videoEl.addEventListener("stalled", onStalled);
   videoEl.addEventListener("waiting", onWaiting);
 
-  if (idx === 0) { _onVid0Stalled = onStalled; _onVid0Waiting = onWaiting; }
-  else { _onVid1Stalled = onStalled; _onVid1Waiting = onWaiting; }
+  if (idx === 0) {
+    _onVid0Stalled = onStalled;
+    _onVid0Waiting = onWaiting;
+  } else {
+    _onVid1Stalled = onStalled;
+    _onVid1Waiting = onWaiting;
+  }
 }
 
 function unbindVideoEvents(videoEl: HTMLVideoElement, idx: 0 | 1): void {
   const stalled = idx === 0 ? _onVid0Stalled : _onVid1Stalled;
   const waiting = idx === 0 ? _onVid0Waiting : _onVid1Waiting;
-  if (stalled) { videoEl.removeEventListener("stalled", stalled); }
-  if (waiting) { videoEl.removeEventListener("waiting", waiting); }
-  if (idx === 0) { _onVid0Stalled = null; _onVid0Waiting = null; }
-  else { _onVid1Stalled = null; _onVid1Waiting = null; }
+  if (stalled) {
+    videoEl.removeEventListener("stalled", stalled);
+  }
+  if (waiting) {
+    videoEl.removeEventListener("waiting", waiting);
+  }
+  if (idx === 0) {
+    _onVid0Stalled = null;
+    _onVid0Waiting = null;
+  } else {
+    _onVid1Stalled = null;
+    _onVid1Waiting = null;
+  }
 }
 
 // 绑定 WebRTC 视频流到 <video> 元素（双摄像头独立流）
@@ -111,7 +140,10 @@ watch(
       startDebugLoop(0);
     } else if (!stream) {
       // 断开连接时重置
-      if (v) { v.srcObject = null; unbindVideoEvents(v, 0); }
+      if (v) {
+        v.srcObject = null;
+        unbindVideoEvents(v, 0);
+      }
       cameraLeftOn.value = false;
     }
   },
@@ -129,7 +161,10 @@ watch(
       cameraRightOn.value = true;
       startDebugLoop(1);
     } else if (!stream) {
-      if (v) { v.srcObject = null; unbindVideoEvents(v, 1); }
+      if (v) {
+        v.srcObject = null;
+        unbindVideoEvents(v, 1);
+      }
       cameraRightOn.value = false;
     }
   },
@@ -760,7 +795,7 @@ onUnmounted(() => {
         <div class="webrtc-info-panel">
           <div class="webrtc-info-header" @click="showWebRTCInfo = !showWebRTCInfo">
             <span class="webrtc-info-title">WebRTC 连接监控</span>
-            <span class="webrtc-info-toggle">{{ showWebRTCInfo ? '▼' : '▶' }}</span>
+            <span class="webrtc-info-toggle">{{ showWebRTCInfo ? "▼" : "▶" }}</span>
           </div>
           <div v-if="showWebRTCInfo" class="webrtc-info-body">
             <div class="webrtc-info-grid">
@@ -794,7 +829,7 @@ onUnmounted(() => {
               <div class="candidates-section">
                 <div class="candidates-title">本地 Candidates ({{ localCandidates.length }})</div>
                 <div v-if="localCandidates.length" class="candidates-list">
-                  <div v-for="(c, i) in localCandidates" :key="'l'+i" class="candidate-item">
+                  <div v-for="(c, i) in localCandidates" :key="'l' + i" class="candidate-item">
                     <span class="cand-idx">#{{ i }}</span>
                     <span class="cand-text">{{ shortCandidate(c) }}</span>
                   </div>
@@ -804,7 +839,7 @@ onUnmounted(() => {
               <div class="candidates-section">
                 <div class="candidates-title">远端 Candidates ({{ remoteCandidates.length }})</div>
                 <div v-if="remoteCandidates.length" class="candidates-list">
-                  <div v-for="(c, i) in remoteCandidates" :key="'r'+i" class="candidate-item">
+                  <div v-for="(c, i) in remoteCandidates" :key="'r' + i" class="candidate-item">
                     <span class="cand-idx">#{{ i }}</span>
                     <span class="cand-text">{{ shortCandidate(c) }}</span>
                   </div>

@@ -188,7 +188,9 @@ export function useWebRTC() {
     // 等 ICE candidates 全部收集完毕后再给额外时间建立连接
     _gatheringFallbackTimer = setTimeout(() => {
       if (webrtcState.value === "connecting") {
-        console.warn("[WebRTC:ICE] gathering 完成但 webrtcState 仍为 connecting, 强制标记为 connected (WebKit/Android 兜底)");
+        console.warn(
+          "[WebRTC:ICE] gathering 完成但 webrtcState 仍为 connecting, 强制标记为 connected (WebKit/Android 兜底)",
+        );
         webrtcState.value = "connected";
         _startMediaTimeout();
         appStore.setSSHConnected(true);
@@ -353,7 +355,17 @@ export function useWebRTC() {
           resolvedStream = new MediaStream();
           resolvedStream.addTrack(event.track);
         }
-        console.log("[WebRTC] ontrack #" + _ontrackCount, "track:", event.track.id, "kind:", event.track.kind, "streams:", event.streams?.length ?? 0, "stream.tracks:", resolvedStream.getTracks().length);
+        console.log(
+          "[WebRTC] ontrack #" + _ontrackCount,
+          "track:",
+          event.track.id,
+          "kind:",
+          event.track.kind,
+          "streams:",
+          event.streams?.length ?? 0,
+          "stream.tracks:",
+          resolvedStream.getTracks().length,
+        );
 
         // 监听 track 状态变化（mute/ended 是画面冻结的关键信号）
         event.track.onmute = () => {
@@ -423,7 +435,14 @@ export function useWebRTC() {
         if (pc.value !== peerConnection) return;
         const iceState = peerConnection.iceConnectionState;
         iceConnectionState.value = iceState;
-        console.log("[WebRTC:ICE] iceConnectionState ->", iceState, "connectionState:", peerConnection.connectionState, "signalingState:", peerConnection.signalingState);
+        console.log(
+          "[WebRTC:ICE] iceConnectionState ->",
+          iceState,
+          "connectionState:",
+          peerConnection.connectionState,
+          "signalingState:",
+          peerConnection.signalingState,
+        );
         robotStore.addLog("info", "WebRTC", `ICE状态: ${iceState}`);
         if (iceState === "connected" || iceState === "completed") {
           console.log("[WebRTC:ICE] ICE 已连接, 等待 DTLS/DataChannel");
@@ -454,7 +473,14 @@ export function useWebRTC() {
         const state = peerConnection.connectionState;
         connectionState.value = state;
         signalingState.value = peerConnection.signalingState;
-        console.log("[WebRTC] connectionState ->", state, "iceState:", peerConnection.iceConnectionState, "signalingState:", peerConnection.signalingState);
+        console.log(
+          "[WebRTC] connectionState ->",
+          state,
+          "iceState:",
+          peerConnection.iceConnectionState,
+          "signalingState:",
+          peerConnection.signalingState,
+        );
         robotStore.addLog("info", "WebRTC", `连接状态: ${state}`);
         if (state === "connected") {
           _clearGatheringFallback();
@@ -513,7 +539,12 @@ export function useWebRTC() {
       });
       await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: answer }));
       signalingState.value = peerConnection.signalingState;
-      console.log("[WebRTC] setRemoteDescription OK, connectionState:", peerConnection.connectionState, "iceState:", peerConnection.iceConnectionState);
+      console.log(
+        "[WebRTC] setRemoteDescription OK, connectionState:",
+        peerConnection.connectionState,
+        "iceState:",
+        peerConnection.iceConnectionState,
+      );
       robotStore.addLog("info", "WebRTC", "WebRTC 连接建立完成");
     } catch (e) {
       robotStore.addLog("error", "WebRTC", `WebRTC 连接失败: ${e}`);
@@ -684,7 +715,10 @@ export function useWebRTC() {
       }
       case "music_list": {
         const songsArr = (data as Record<string, unknown>).songs;
-        console.log("[DC.msg] music_list, songs:", Array.isArray(songsArr) ? (songsArr as Array<unknown>).length : "N/A");
+        console.log(
+          "[DC.msg] music_list, songs:",
+          Array.isArray(songsArr) ? (songsArr as Array<unknown>).length : "N/A",
+        );
         if (Array.isArray(songsArr)) {
           robotStore.setMusicSongs(songsArr as unknown as MusicTrack[]);
         }
@@ -701,7 +735,11 @@ export function useWebRTC() {
           const ms = { ...robotStore.musicStatus, playlist: data.playlist as unknown as MusicTrack[] };
           robotStore.setMusicStatus(ms);
         } else if (typeof data.streaming === "boolean") {
-          const ms = { ...robotStore.musicStatus, streaming: data.streaming as boolean, stream_type: String(data.stream_type ?? null) };
+          const ms = {
+            ...robotStore.musicStatus,
+            streaming: data.streaming as boolean,
+            stream_type: String(data.stream_type ?? null),
+          };
           robotStore.setMusicStatus(ms);
         }
         break;
@@ -731,7 +769,10 @@ export function useWebRTC() {
           body: String(svcMsg.body ?? ""),
           read: false,
           source: String(svcMsg.source ?? "service_manager"),
-          severity: (["info", "warning", "error"].includes(String(svcMsg.severity)) ? svcMsg.severity : "info") as "info" | "warning" | "error",
+          severity: (["info", "warning", "error"].includes(String(svcMsg.severity)) ? svcMsg.severity : "info") as
+            | "info"
+            | "warning"
+            | "error",
         });
         break;
       }
@@ -811,8 +852,24 @@ export function useWebRTC() {
     }
   }
 
-  return { pc, dc, videoStream0, videoStream1, webrtcState,
-    iceConnectionState, iceGatheringState, connectionState, signalingState, dcReadyState, dcEverOpened,
-    gatheringCompleted, localCandidates, remoteCandidates,
-    establishConnection, close, reconnect, resetAndOffer };
+  return {
+    pc,
+    dc,
+    videoStream0,
+    videoStream1,
+    webrtcState,
+    iceConnectionState,
+    iceGatheringState,
+    connectionState,
+    signalingState,
+    dcReadyState,
+    dcEverOpened,
+    gatheringCompleted,
+    localCandidates,
+    remoteCandidates,
+    establishConnection,
+    close,
+    reconnect,
+    resetAndOffer,
+  };
 }

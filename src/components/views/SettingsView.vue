@@ -51,11 +51,7 @@ function handleDebugModeChange(e: Event) {
         <div class="setting-toggle">
           <span class="setting-hint">开启后在浏览器控制台输出调试日志</span>
           <label class="toggle-switch">
-            <input
-              type="checkbox"
-              :checked="appStore.debugMode"
-              @change="handleDebugModeChange"
-            />
+            <input type="checkbox" :checked="appStore.debugMode" @change="handleDebugModeChange" />
             <span class="toggle-slider"></span>
           </label>
         </div>
