@@ -697,8 +697,12 @@ export function useWebRTC() {
         break;
       }
       case "error":
-        appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error");
-        robotStore.addLog("error", "Remote", String(data.message ?? ""));
+        console.warn(`[Remote:error] ${String(data.message ?? "未知错误")}`)
+        robotStore.addLog("error", "Remote", String(data.message ?? ""))
+        // 503 表示可选服务不可用，不弹 Toast
+        if (String(data.code ?? "") !== "503") {
+          appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error")
+        }
         break;
 
       // ---- 音乐播放 (DataChannel 路径) ----
