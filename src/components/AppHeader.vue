@@ -57,19 +57,34 @@ const controlModeLabel = computed(() => {
   }
 });
 
-const navItems = [
-  { view: "quickActions", label: "⚡ 快速操作" },
-  { view: "logs", label: "📋 日志" },
-  { view: "messages", label: "📬 消息" },
-  { view: "status", label: "📊 状态" },
-  { view: "processManager", label: "🔧 进程" },
-  { view: "software", label: "📦 软件" },
-  { view: "remote", label: "🎮 遥控" },
-  { view: "dance", label: "💃 跳舞" },
-  { view: "map", label: "🗺️ 地图" },
-  { view: "gallery", label: "🖼️ 图库" },
-  { view: "music", label: "🎵 音乐" },
+/** 全量导航项定义，根据机器人 features 动态过滤 */
+const ALL_NAV_ITEMS = [
+  { view: "quickActions" as const, label: "⚡ 快速操作", feature: null },
+  { view: "logs", label: "📋 日志", feature: null },
+  { view: "messages", label: "📬 消息", feature: null },
+  { view: "status", label: "📊 状态", feature: null },
+  { view: "processManager", label: "🔧 进程", feature: null },
+  { view: "software", label: "📦 软件", feature: "exec" },
+  { view: "remote", label: "🎮 遥控", feature: "motion" },
+  { view: "dance", label: "💃 跳舞", feature: "dance" },
+  { view: "map", label: "🗺️ 地图", feature: null },
+  { view: "gallery", label: "🖼️ 图库", feature: null },
+  { view: "music", label: "🎵 音乐", feature: "music" },
 ] as const;
+
+/** 根据机器人 features 动态计算可见导航项 */
+const navItems = computed(() => {
+  const features = devicesStore.robotInfo?.features;
+  // 未连接时隐藏全部功能，连接后根据 features 动态渲染
+  if (!isConnected.value) {
+    return [];
+  }
+  // 已连接则根据 features 过滤：feature 为 null 表示始终显示
+  return ALL_NAV_ITEMS.filter((item) => {
+    if (!item.feature) return true;
+    return features.includes(item.feature);
+  });
+});
 
 const currentView = computed(() => appStore.currentView);
 
@@ -329,6 +344,19 @@ onUnmounted(() => {
             <div v-if="!isConnected && !hasDeviceSelected" class="ops-menu-empty">无可用操作</div>
           </div>
         </div>
+        <div v-if="isConnected" class="comms-monitor-wrapper">
+          <button
+            class="icon-btn"
+            :class="{ active: commsMonitorOpen }"
+            title="通讯状态监控"
+            @click="toggleCommsMonitor"
+          >
+            📡
+          </button>
+          <div v-show="commsMonitorOpen" class="comms-dropdown">
+            <CommsMonitor />
+          </div>
+        </div>
         <button
           class="icon-btn"
           title="切换主题 ({{ appStore.theme === 'auto' ? '跟随系统' : appStore.theme === 'dark' ? '深色' : '明亮' }})"
@@ -375,19 +403,6 @@ onUnmounted(() => {
       >
         {{ item.label }}
       </button>
-      <div class="comms-monitor-wrapper" :class="{ active: commsMonitorOpen }">
-        <button
-          class="comms-btn"
-          :class="{ active: commsMonitorOpen }"
-          title="通讯状态监控"
-          @click="toggleCommsMonitor"
-        >
-          📡 通讯
-        </button>
-        <div v-show="commsMonitorOpen" class="comms-dropdown">
-          <CommsMonitor />
-        </div>
-      </div>
     </div>
   </header>
 </template>
@@ -650,25 +665,6 @@ onUnmounted(() => {
 /* ---- 通讯监控下拉 ---- */
 .comms-monitor-wrapper {
   position: relative;
-}
-.comms-btn {
-  padding: 6px 14px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s;
-}
-.comms-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.comms-btn.active {
-  background: var(--accent);
-  color: #fff;
 }
 .comms-dropdown {
   position: absolute;

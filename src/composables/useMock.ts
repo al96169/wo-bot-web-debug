@@ -22,7 +22,7 @@ const MOCK_MODULE_NAMES = [
   "thermal-mon",
 ];
 
-const MOCK_FEATURES = ["SLAM", "RGB-D", "LiDAR", "IMU", "GPS", "Obstacle", "Audio", "Thermal"];
+const MOCK_FEATURES = ["websocket", "webrtc", "exec", "motion", "system", "camera", "gimbal", "dance", "music", "SLAM", "RGB-D", "LiDAR", "IMU", "GPS", "Obstacle", "Audio", "Thermal"];
 
 const MOCK_SUBJECTS = [
   "系统自检报告",

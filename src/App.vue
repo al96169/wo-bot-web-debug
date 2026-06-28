@@ -407,7 +407,11 @@ const viewsMap: Record<ViewName, unknown> = {
       <AppSidebar @select-device="handleSelectDevice" @add-device="handleAddDevice" />
       <main class="main-content">
         <div class="views-container">
-          <KeepAlive>
+          <div v-if="appStore.connection !== 'connected'" class="empty-state">
+            <div class="empty-state-icon">🔌</div>
+            <div class="empty-state-text">请连接机器人</div>
+          </div>
+          <KeepAlive v-else>
             <component :is="viewsMap[appStore.currentView]" />
           </KeepAlive>
         </div>
@@ -467,6 +471,24 @@ const viewsMap: Record<ViewName, unknown> = {
   padding: 16px;
   display: flex;
   flex-direction: column;
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  gap: 12px;
+}
+.empty-state-icon {
+  font-size: 48px;
+  opacity: 0.4;
+}
+.empty-state-text {
+  font-size: 16px;
+  font-weight: 500;
 }
 
 /* Toast */

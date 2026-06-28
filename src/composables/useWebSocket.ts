@@ -493,6 +493,10 @@ export function useWebSocket() {
         // 从 status 中同步 features（确保平板等客户端也能获取最新功能列表）
         if (Array.isArray(data.features) && data.features.length > 0) {
           _remoteFeatures.value = data.features as string[];
+          // 同步到 devicesStore，确保导航栏等功能过滤能实时响应
+          if (devicesStore.robotInfo) {
+            devicesStore.robotInfo.features = data.features as string[];
+          }
         }
         // 从 status 中同步服务状态
         if (Array.isArray(data.services)) {
