@@ -346,11 +346,18 @@ export function useWebRTC() {
 
       peerConnection.ontrack = (event: RTCTrackEvent) => {
         _ontrackCount++;
-        // WebKit (iOS/iPadOS) 兼容：event.streams 可能为空数组，new MediaStream([track]) 也可能不兼容
-        // 最优：使用 event.streams[0]，其次：手动 addTrack
+        // 每个 track 创建独立的 MediaStream，避免多 track 共享同一 stream
+        // 导致两个 video 元素都显示同一个摄像头的画面
         let resolvedStream: MediaStream;
         if (event.streams && event.streams.length > 0) {
-          resolvedStream = event.streams[0];
+          const sharedStream = event.streams[0];
+          // 检查是否和已分配的流是同一个对象（多 track 共享 stream 的情况）
+          if (sharedStream === videoStream0.value || sharedStream === videoStream1.value) {
+            resolvedStream = new MediaStream();
+            resolvedStream.addTrack(event.track);
+          } else {
+            resolvedStream = sharedStream;
+          }
         } else {
           resolvedStream = new MediaStream();
           resolvedStream.addTrack(event.track);

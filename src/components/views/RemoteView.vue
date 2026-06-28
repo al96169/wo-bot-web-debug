@@ -593,21 +593,20 @@ function handleAction(action: string) {
 
 // ==================== 初始化 ====================
 
-/** 浏览器切后台再切回来时，video 元素可能解绑，重新绑定并显示 */
+/** 浏览器切后台再切回来时，video 元素可能解绑，重新绑定 */
 function rebindVideoStreams(): void {
-  if (videoStream0.value && videoLeftRef.value) {
+  // 仅当用户之前已开启摄像头时才重新绑定，保留用户的开关状态
+  if (videoStream0.value && videoLeftRef.value && cameraLeftOn.value) {
     videoLeftRef.value.muted = true;
     videoLeftRef.value.srcObject = videoStream0.value;
     videoLeftRef.value.play().catch((e) => console.error("[Video] cam0 rebind play() 失败:", e));
     bindVideoEvents(videoLeftRef.value, 0, videoStream0.value);
-    cameraLeftOn.value = true;
   }
-  if (videoStream1.value && videoRightRef.value) {
+  if (videoStream1.value && videoRightRef.value && cameraRightOn.value) {
     videoRightRef.value.muted = true;
     videoRightRef.value.srcObject = videoStream1.value;
     videoRightRef.value.play().catch((e) => console.error("[Video] cam1 rebind play() 失败:", e));
     bindVideoEvents(videoRightRef.value, 1, videoStream1.value);
-    cameraRightOn.value = true;
   }
 }
 
