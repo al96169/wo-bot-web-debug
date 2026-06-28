@@ -67,13 +67,13 @@ function scheduleWebRTC(): void {
     console.log("[App] scheduleWebRTC firing, features:", features);
     // 启动超时检测
     const failTimer = setTimeout(() => {
-      if (webrtcState.value !== "connected") {
+      if (webrtcState.value === "connecting") {
         console.warn("[App] WebRTC 建立超时 (15s)");
         appStore.showToast("WebRTC 连接未建立，摄像头/云台可能不可用", "error");
       }
     }, 15000);
     const stopWatch = watch(webrtcState, (state) => {
-      if (state === "connected" || state === "failed") {
+      if (state === "connected" || state === "failed" || state === "idle") {
         clearTimeout(failTimer);
         stopWatch();
         if (state === "failed") {
@@ -118,7 +118,7 @@ setOnReconnect(() => {
   _webrtcEstablishing = true;
   // 启动 WebRTC 建立超时检测：15 秒内未 connected 则弹窗提示
   const failTimer = setTimeout(() => {
-    if (webrtcState.value !== "connected") {
+    if (webrtcState.value === "connecting") {
       console.warn("[App] WebRTC 建立超时 (15s), 当前状态:", webrtcState.value);
       appStore.showToast("WebRTC 连接未建立，摄像头/云台可能不可用，请尝试断开后重连", "error");
     }
@@ -126,15 +126,14 @@ setOnReconnect(() => {
   establishWebRTC().finally(() => {
     _webrtcEstablishing = false;
   });
-  // connected 后清除超时 timer
+  // connected/idle/failed 后清除超时 timer
   const stopWatch = watch(webrtcState, (state) => {
-    if (state === "connected") {
+    if (state === "connected" || state === "failed" || state === "idle") {
       clearTimeout(failTimer);
       stopWatch();
-    } else if (state === "failed") {
-      clearTimeout(failTimer);
-      stopWatch();
-      appStore.showToast("WebRTC 连接失败，摄像头/云台不可用", "error");
+      if (state === "failed") {
+        appStore.showToast("WebRTC 连接失败，摄像头/云台不可用", "error");
+      }
     }
   });
 });
