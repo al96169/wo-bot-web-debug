@@ -539,6 +539,7 @@ export function useWebSocket() {
           String(data.status ?? "stopped") as "stopped" | "playing" | "paused",
           data.dance_id != null ? String(data.dance_id) : null,
           typeof data.progress === "number" ? data.progress : undefined,
+          typeof data.loop === "boolean" ? data.loop : undefined,
         );
         break;
       }

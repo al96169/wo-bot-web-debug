@@ -151,6 +151,8 @@ export const useRobotStore = defineStore("robot", {
     danceCurrentId: null as string | null,
     /** 播放进度 0~1 */
     danceProgress: 0 as number,
+    /** 循环播放 */
+    danceLoop: false as boolean,
 
     /** 音乐播放状态 */
     musicStatus: {
@@ -355,10 +357,11 @@ export const useRobotStore = defineStore("robot", {
       this.dances = list;
     },
 
-    setDanceStatus(status: "stopped" | "playing" | "paused", danceId?: string | null, progress?: number): void {
+    setDanceStatus(status: "stopped" | "playing" | "paused", danceId?: string | null, progress?: number, loop?: boolean): void {
       this.danceStatus = status;
       if (danceId !== undefined) this.danceCurrentId = danceId;
       if (progress !== undefined) this.danceProgress = progress;
+      if (loop !== undefined) this.danceLoop = loop;
     },
 
     /* ---- 音乐 ---- */

@@ -1,70 +1,92 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, onUnmounted } from "vue";
 import { useRobotStore } from "@/stores/robot";
 import { useWebSocket, getRemoteFeatures, onMessage } from "@/composables/useWebSocket";
 
 const { send } = useWebSocket();
 const robotStore = useRobotStore();
 
-// ----- 功能可用性 -----
 const danceAvailable = computed(() => getRemoteFeatures().includes("dance"));
 
-// ----- 从 store 读取舞蹈数据（跨视图切换持久化） -----
 const dances = computed(() => robotStore.dances);
 const status = computed(() => robotStore.danceStatus);
 const currentDanceId = computed(() => robotStore.danceCurrentId);
 const progress = computed(() => robotStore.danceProgress);
-const selectedDanceId = ref<string | null>(null);
+const loopEnabled = computed({
+  get: () => robotStore.danceLoop,
+  set: (val: boolean) => { robotStore.danceLoop = val; },
+});
 
-// 监听来自服务端的消息，自动拉取列表
+// 连接后自动拉取舞蹈列表
 onMessage((msg: { type: string; data?: any }) => {
-  // 连接后 features 中有 dance 且列表为空时自动拉取
   if (msg.type === "status" && msg.data?.features?.includes("dance") && robotStore.dances.length === 0) {
     send({ type: "dance", data: { command: "list" } });
   }
 });
 
-// 播放
+// ----- 播放控制 -----
 function play(danceId: string) {
-  selectedDanceId.value = danceId;
-  send({ type: "dance", data: { command: "play", dance_id: danceId } });
-  robotStore.addLog("info", "舞蹈", `开始播放: ${dances.value.find((d) => d.id === danceId)?.name ?? danceId}`);
+  send({ type: "dance", data: { command: "play", dance_id: danceId, loop: loopEnabled.value } });
+  const name = dances.value.find((d) => d.id === danceId)?.name ?? danceId;
+  robotStore.addLog("info", "舞蹈", `开始播放: ${name}${loopEnabled.value ? " (循环)" : ""}`);
 }
 
-// 暂停/恢复
-function togglePause() {
-  send({ type: "dance", data: { command: "pause" } });
-  robotStore.addLog("info", "舞蹈", status.value === "playing" ? "暂停" : "恢复");
+function togglePlay() {
+  if (status.value === "stopped") {
+    if (dances.value.length > 0) play(dances.value[0].id);
+  } else {
+    send({ type: "dance", data: { command: "pause" } });
+  }
 }
 
-// 停止
 function stop() {
   send({ type: "dance", data: { command: "stop" } });
-  robotStore.addLog("info", "舞蹈", "停止播放");
 }
 
-// 手动拉取列表
 function requestList() {
   send({ type: "dance", data: { command: "list" } });
 }
 
-// 格式化时长
+// ----- 格式化 -----
 function formatDuration(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return m > 0 ? `${m}分${s}秒` : `${s}秒`;
 }
 
+// ----- 计算属性 -----
 const progressPercent = computed(() => Math.round(progress.value * 100));
+const isPlaying = computed(() => status.value !== "stopped");
 
 const currentDanceName = computed(() => {
   const d = dances.value.find((d) => d.id === currentDanceId.value);
   return d?.name ?? "";
 });
+
+const currentDanceIcon = computed(() => {
+  const d = dances.value.find((d) => d.id === currentDanceId.value);
+  return d?.icon ?? "💃";
+});
+
+// ----- 定时轮询进度 -----
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+onMounted(() => {
+  pollTimer = setInterval(() => {
+    if (robotStore.danceStatus !== "stopped") {
+      send({ type: "dance", data: { command: "status" } });
+    }
+  }, 1000);
+});
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer);
+});
 </script>
 
 <template>
   <div class="dance-view">
+    <!-- 不可用 -->
     <div v-if="!danceAvailable" class="dance-unavailable">
       <div class="empty-icon">💃</div>
       <p>舞蹈功能不可用</p>
@@ -72,11 +94,11 @@ const currentDanceName = computed(() => {
     </div>
 
     <template v-else>
-      <!-- 舞蹈列表 -->
-      <div class="dance-section">
+      <!-- 舞蹈卡片区域（可滚动） -->
+      <div class="dance-content">
         <div class="section-header">
           <h3>舞蹈曲目</h3>
-          <button class="btn-sm" @click="requestList">刷新</button>
+          <button class="btn-sm" @click="requestList">🔄 刷新</button>
         </div>
 
         <div v-if="dances.length === 0" class="empty-list">
@@ -88,10 +110,7 @@ const currentDanceName = computed(() => {
             v-for="d in dances"
             :key="d.id"
             class="dance-card"
-            :class="{
-              selected: selectedDanceId === d.id,
-              active: currentDanceId === d.id && status !== 'stopped',
-            }"
+            :class="{ active: currentDanceId === d.id && isPlaying }"
             @click="play(d.id)"
           >
             <span class="dance-icon">{{ d.icon }}</span>
@@ -101,29 +120,41 @@ const currentDanceName = computed(() => {
         </div>
       </div>
 
-      <!-- 播放控制 -->
-      <div class="player-section" :class="{ active: currentDanceId }">
-        <div class="player-status">
-          <span class="status-badge" :class="status">
-            {{ status === "playing" ? "▶ 播放中" : status === "paused" ? "⏸ 已暂停" : "⏹ 已停止" }}
-          </span>
-          <span v-if="currentDanceName" class="now-playing">{{ currentDanceName }}</span>
+      <!-- 底部播放栏（始终可见） -->
+      <div class="player-bar" :class="{ active: isPlaying }">
+        <!-- 进度条（不可拖动） -->
+        <div class="bar-progress">
+          <div class="bar-fill" :style="{ width: progressPercent + '%' }" />
         </div>
-
-        <!-- 进度条 -->
-        <div class="progress-bar-wrap">
-          <div class="progress-bar">
-            <div class="progress-fill" :style="{ width: progressPercent + '%' }" />
+        <!-- 信息 + 循环开关 + 按钮 -->
+        <div class="bar-row">
+          <div class="bar-info">
+            <div class="bar-cover">{{ isPlaying ? currentDanceIcon : "💃" }}</div>
+            <div class="bar-text">
+              <div class="bar-title">{{ isPlaying ? currentDanceName : "无舞蹈播放" }}</div>
+              <div class="bar-sub">
+                <template v-if="isPlaying">
+                  {{ progressPercent }}%
+                  <span class="status-tag" :class="status">{{ status === "playing" ? "播放中" : "已暂停" }}</span>
+                </template>
+                <template v-else>点击 ▶ 开始播放</template>
+              </div>
+            </div>
           </div>
-          <span class="progress-text">{{ progressPercent }}%</span>
-        </div>
 
-        <!-- 控制按钮 -->
-        <div class="player-controls">
-          <button class="control-btn pause" :disabled="status === 'stopped'" @click="togglePause">
-            {{ status === "paused" ? "▶ 恢复" : "⏸ 暂停" }}
-          </button>
-          <button class="control-btn stop" :disabled="status === 'stopped'" @click="stop">⏹ 停止</button>
+          <!-- 循环播放开关（始终可切换） -->
+          <label class="loop-toggle" title="循环播放">
+            <input type="checkbox" v-model="loopEnabled" />
+            <span class="loop-label">循环</span>
+          </label>
+
+          <!-- 控制按钮 -->
+          <div class="bar-ctrls">
+            <button class="ctrl-btn-sm play-btn-sm" :title="status === 'playing' ? '暂停' : '播放'" @click="togglePlay">
+              {{ status === "playing" ? "⏸" : "▶️" }}
+            </button>
+            <button v-if="isPlaying" class="ctrl-btn-sm" title="停止" @click="stop">⏹</button>
+          </div>
         </div>
       </div>
     </template>
@@ -134,12 +165,13 @@ const currentDanceName = computed(() => {
 .dance-view {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  height: 100%;
-  padding: 16px;
-  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
 }
 
+/* ---- 不可用 ---- */
 .dance-unavailable {
   display: flex;
   flex-direction: column;
@@ -148,7 +180,6 @@ const currentDanceName = computed(() => {
   flex: 1;
   color: var(--color-text-muted, #888);
 }
-
 .empty-icon {
   font-size: 48px;
   margin-bottom: 12px;
@@ -158,13 +189,20 @@ const currentDanceName = computed(() => {
   opacity: 0.6;
 }
 
+/* ---- 卡片区域 ---- */
+.dance-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
 }
-
 .section-header h3 {
   margin: 0;
   font-size: 16px;
@@ -194,6 +232,7 @@ const currentDanceName = computed(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 10px;
+  padding-bottom: 8px;
 }
 
 .dance-card {
@@ -208,17 +247,12 @@ const currentDanceName = computed(() => {
   cursor: pointer;
   transition: all 0.15s;
   color: var(--color-text, #eee);
+  font-family: inherit;
 }
-
 .dance-card:hover {
   border-color: var(--color-primary, #6c8cff);
   background: var(--color-bg-hover, #333);
 }
-
-.dance-card.selected {
-  border-color: var(--color-primary, #6c8cff);
-}
-
 .dance-card.active {
   border-color: #4caf50;
   background: rgba(76, 175, 80, 0.08);
@@ -231,118 +265,149 @@ const currentDanceName = computed(() => {
   font-size: 13px;
   font-weight: 500;
   text-align: center;
+  line-height: 1.3;
 }
 .dance-duration {
   font-size: 11px;
   color: var(--color-text-muted, #888);
 }
 
-/* ----- 播放器 ----- */
-.player-section {
-  border: 1px solid var(--color-border, #444);
-  border-radius: 10px;
-  padding: 16px;
+/* ---- 底部播放栏 ---- */
+.player-bar {
+  flex-shrink: 0;
   background: var(--color-bg-secondary, #2a2a2a);
-  opacity: 0.5;
-  transition: opacity 0.2s;
+  border-top: 1px solid var(--color-border, #444);
 }
 
-.player-section.active {
-  opacity: 1;
+.bar-progress {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.bar-fill {
+  height: 100%;
+  background: var(--color-primary, #6c8cff);
+  transition: width 0.3s linear;
+  border-radius: 0 2px 2px 0;
 }
 
-.player-status {
+.bar-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  gap: 10px;
+}
+
+.bar-info {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
-.status-badge {
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 12px;
+.bar-cover {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.bar-text {
+  min-width: 0;
+  flex: 1;
+}
+.bar-title {
+  font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
 }
-
-.status-badge.stopped {
-  background: rgba(255, 255, 255, 0.08);
-  color: #888;
+.bar-sub {
+  font-size: 11px;
+  color: var(--color-text-muted, #888);
+  line-height: 1.4;
 }
-.status-badge.playing {
+.status-tag {
+  margin-left: 6px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.status-tag.playing {
   background: rgba(76, 175, 80, 0.15);
   color: #4caf50;
 }
-.status-badge.paused {
+.status-tag.paused {
   background: rgba(255, 193, 7, 0.15);
   color: #ffc107;
 }
 
-.now-playing {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.progress-bar-wrap {
+/* 循环开关 */
+.loop-toggle {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.progress-bar {
-  flex: 1;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  border-radius: 3px;
-  background: var(--color-primary, #6c8cff);
-  transition: width 0.3s;
-}
-
-.progress-text {
+  gap: 5px;
+  cursor: pointer;
   font-size: 12px;
   color: var(--color-text-muted, #888);
-  min-width: 36px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+  user-select: none;
+  flex-shrink: 0;
 }
-
-.player-controls {
-  display: flex;
-  gap: 10px;
-}
-
-.control-btn {
-  flex: 1;
-  padding: 10px 0;
-  border: 1px solid var(--color-border, #444);
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+.loop-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-primary, #6c8cff);
   cursor: pointer;
+}
+.loop-toggle input[type="checkbox"]:checked + .loop-label {
+  color: var(--color-primary, #6c8cff);
+}
+.loop-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 控制按钮 */
+.bar-ctrls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.ctrl-btn-sm {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--color-border, #444);
+  border-radius: 50%;
   background: var(--color-bg-secondary, #2a2a2a);
   color: var(--color-text, #eee);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.15s;
+  padding: 0;
 }
-
-.control-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+.ctrl-btn-sm:hover {
+  border-color: var(--color-primary, #6c8cff);
 }
-
-.control-btn.pause:not(:disabled):hover {
-  background: rgba(255, 193, 7, 0.1);
-  border-color: #ffc107;
+.ctrl-btn-sm.play-btn-sm {
+  width: 40px;
+  height: 40px;
+  background: var(--color-primary, #6c8cff);
+  border-color: var(--color-primary, #6c8cff);
+  color: #fff;
+  font-size: 16px;
 }
-
-.control-btn.stop:not(:disabled):hover {
-  background: rgba(244, 67, 54, 0.1);
-  border-color: #f44336;
+.ctrl-btn-sm.play-btn-sm:hover {
+  filter: brightness(1.1);
 }
 </style>
