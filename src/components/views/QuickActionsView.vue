@@ -15,7 +15,9 @@ const actionItems: { action: ToggleKey | "emergency"; label: string; cssClass: s
   { action: "mute", label: "🔇 静音", cssClass: "toggle", cmdType: "mute" },
   {
     action: "eco",
-    get label() { return robotStore.powerPolicy.mode === "eco" ? "⚡ 省电中" : "🔋 省电模式"; },
+    get label() {
+      return robotStore.powerPolicy.mode === "eco" ? "⚡ 省电中" : "🔋 省电模式";
+    },
     cssClass: "toggle",
     cmdType: "eco",
   },

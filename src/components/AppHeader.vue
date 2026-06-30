@@ -83,7 +83,7 @@ const navItems = computed(() => {
   // 已连接则根据 features 过滤：feature 为 null 表示始终显示
   return ALL_NAV_ITEMS.filter((item) => {
     if (!item.feature) return true;
-    return features.includes(item.feature);
+    return (features ?? []).includes(item.feature);
   });
 });
 

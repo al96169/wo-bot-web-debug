@@ -673,11 +673,11 @@ export function useWebSocket() {
         break;
       }
       case "error":
-        console.warn(`[Signaling:error] ${String(data.message ?? "未知错误")}`)
-        robotStore.addLog("error", "Signaling", String(data.message ?? ""))
+        console.warn(`[Signaling:error] ${String(data.message ?? "未知错误")}`);
+        robotStore.addLog("error", "Signaling", String(data.message ?? ""));
         // 503 表示可选服务不可用（如摄像头/Rosmaster），不弹 Toast
         if (String(data.code ?? "") !== "503") {
-          appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error")
+          appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error");
         }
         break;
 

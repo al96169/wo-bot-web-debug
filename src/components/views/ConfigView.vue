@@ -4,7 +4,7 @@ import { useRobotStore } from "@/stores/robot";
 import { useWebSocket } from "@/composables/useWebSocket";
 
 const robotStore = useRobotStore();
-const { send, sendWs, connectedIp } = useWebSocket();
+const { send, sendWs } = useWebSocket();
 
 const activeTab = ref<string>("system");
 const thresholdValue = ref<number>(robotStore.powerPolicy.threshold);
@@ -32,9 +32,7 @@ watch(simulateBatteryLevel, (val) => {
   }, 300);
 });
 
-const tabs = [
-  { id: "system", label: "🖥️ 系统配置" },
-];
+const tabs = [{ id: "system", label: "🖥️ 系统配置" }];
 
 function textTime() {
   return new Date().toLocaleTimeString();
@@ -121,17 +119,9 @@ async function handleSaveThreshold() {
             <span class="config-item-value">{{ thresholdValue }}%</span>
             <span v-if="robotStore.powerPolicy.mode === 'eco'" class="eco-badge">当前省电中</span>
           </div>
-          <p class="config-item-desc">
-            当电量低于此阀值时，自动进入省电模式（限制跳舞、限制音量等）。范围 10% - 50%。
-          </p>
+          <p class="config-item-desc">当电量低于此阀值时，自动进入省电模式（限制跳舞、限制音量等）。范围 10% - 50%。</p>
           <div class="threshold-slider">
-            <input
-              type="range"
-              min="10"
-              max="50"
-              step="5"
-              v-model.number="thresholdValue"
-            />
+            <input v-model.number="thresholdValue" type="range" min="10" max="50" step="5" />
             <div class="threshold-labels">
               <span>10%</span>
               <span>30%</span>
@@ -147,10 +137,10 @@ async function handleSaveThreshold() {
               {{ robotStore.powerPolicy.mode === "eco" ? "⚡ 省电模式" : "✅ 正常模式" }}
             </span>
           </div>
-          <p class="config-item-desc" v-if="robotStore.powerPolicy.mode === 'eco'">
+          <p v-if="robotStore.powerPolicy.mode === 'eco'" class="config-item-desc">
             省电模式下，跳舞功能不可用，音乐音量限制为 50% 以下。
           </p>
-          <p class="config-item-desc" v-if="robotStore.powerPolicy.manual_override">
+          <p v-if="robotStore.powerPolicy.manual_override" class="config-item-desc">
             已触发手动豁免，本次会话不再自动进入省电模式。
           </p>
         </div>
@@ -171,11 +161,11 @@ async function handleSaveThreshold() {
 
           <div class="simulate-row">
             <input
+              v-model.number="simulateBatteryLevel"
               type="range"
               min="5"
               max="95"
               step="1"
-              v-model.number="simulateBatteryLevel"
               class="simulate-slider"
             />
             <span class="simulate-value">{{ simulateBatteryLevel }}%</span>
@@ -183,11 +173,9 @@ async function handleSaveThreshold() {
 
           <div class="simulate-actions">
             <button class="btn-simulate" @click="handleSimulate">
-              {{ isSimulating ? '🔄 更新模拟值' : '🧪 模拟此电量' }}
+              {{ isSimulating ? "🔄 更新模拟值" : "🧪 模拟此电量" }}
             </button>
-            <button class="btn-clear-sim" v-if="isSimulating" @click="handleClearSimulation">
-              ↩️ 恢复真实电量
-            </button>
+            <button v-if="isSimulating" class="btn-clear-sim" @click="handleClearSimulation">↩️ 恢复真实电量</button>
           </div>
 
           <p v-if="isSimulating" class="simulate-active-tip">

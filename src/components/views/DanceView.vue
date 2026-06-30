@@ -14,7 +14,9 @@ const currentDanceId = computed(() => robotStore.danceCurrentId);
 const progress = computed(() => robotStore.danceProgress);
 const loopEnabled = computed({
   get: () => robotStore.danceLoop,
-  set: (val: boolean) => { robotStore.danceLoop = val; },
+  set: (val: boolean) => {
+    robotStore.danceLoop = val;
+  },
 });
 
 // 连接后自动拉取舞蹈列表
@@ -144,7 +146,7 @@ onUnmounted(() => {
 
           <!-- 循环播放开关（始终可切换） -->
           <label class="loop-toggle" title="循环播放">
-            <input type="checkbox" v-model="loopEnabled" />
+            <input v-model="loopEnabled" type="checkbox" />
             <span class="loop-label">循环</span>
           </label>
 

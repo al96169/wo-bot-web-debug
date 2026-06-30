@@ -46,10 +46,11 @@ function copyValue(value: string, label: string) {
             <div class="run-card-value">{{ robotStore.systemStatus.battery.level }}%</div>
             <div class="run-card-label">电池电量</div>
             <div class="run-card-sub">
-              ⏱ {{
+              ⏱
+              {{
                 robotStore.systemStatus.battery.estimatedMinutes != null
                   ? `约 ${robotStore.systemStatus.battery.estimatedMinutes} 分钟`
-                  : '预计可用时长：计算中'
+                  : "预计可用时长：计算中"
               }}
             </div>
           </div>

@@ -365,7 +365,12 @@ export const useRobotStore = defineStore("robot", {
       this.dances = list;
     },
 
-    setDanceStatus(status: "stopped" | "playing" | "paused", danceId?: string | null, progress?: number, loop?: boolean): void {
+    setDanceStatus(
+      status: "stopped" | "playing" | "paused",
+      danceId?: string | null,
+      progress?: number,
+      loop?: boolean,
+    ): void {
       this.danceStatus = status;
       if (danceId !== undefined) this.danceCurrentId = danceId;
       if (progress !== undefined) this.danceProgress = progress;
@@ -384,7 +389,12 @@ export const useRobotStore = defineStore("robot", {
 
     /* ---- 省电策略 ---- */
 
-    setPowerPolicy(data: { mode: "normal" | "eco"; threshold: number; manual_override: boolean; simulated_battery?: number | null }): void {
+    setPowerPolicy(data: {
+      mode: "normal" | "eco";
+      threshold: number;
+      manual_override: boolean;
+      simulated_battery?: number | null;
+    }): void {
       this.powerPolicy = { ...this.powerPolicy, ...data };
     },
   },
