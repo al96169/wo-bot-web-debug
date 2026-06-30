@@ -110,7 +110,7 @@ export const useRobotStore = defineStore("robot", {
 
     /** 系统运行状态（仪表盘/header 共用） */
     systemStatus: {
-      battery: { level: 0, status: "discharging", state: "放电中", temp: 0 },
+      battery: { level: 0, status: "discharging", state: "放电中", temp: 0, estimatedMinutes: null as number | null },
       cpu: { usage: 0, temp: 0 },
       memory: { usage: 0 },
       disk: { usage: 0 },
@@ -120,7 +120,7 @@ export const useRobotStore = defineStore("robot", {
       uptime: 0,
       hostname: "--",
     } as {
-      battery: { level: number; status: string; state: string; temp: number };
+      battery: { level: number; status: string; state: string; temp: number; estimatedMinutes: number | null };
       cpu: { usage: number; temp: number };
       memory: { usage: number };
       disk: { usage: number };
@@ -169,6 +169,14 @@ export const useRobotStore = defineStore("robot", {
 
     /** 音乐歌曲列表 */
     musicSongs: [] as MusicTrack[],
+
+    /** 省电策略状态 */
+    powerPolicy: {
+      mode: "normal" as "normal" | "eco",
+      threshold: 30,
+      manual_override: false,
+      simulated_battery: null as number | null,
+    },
   }),
 
   getters: {
@@ -372,6 +380,12 @@ export const useRobotStore = defineStore("robot", {
 
     setMusicSongs(songs: MusicTrack[]): void {
       this.musicSongs = songs;
+    },
+
+    /* ---- 省电策略 ---- */
+
+    setPowerPolicy(data: { mode: "normal" | "eco"; threshold: number; manual_override: boolean; simulated_battery?: number | null }): void {
+      this.powerPolicy = { ...this.powerPolicy, ...data };
     },
   },
 });

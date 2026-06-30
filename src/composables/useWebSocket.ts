@@ -476,6 +476,7 @@ export function useWebSocket() {
             status: String(batt.status ?? "discharging"),
             state: batt.level ? `${batt.level}%` : "--",
             temp: Number(batt.temperature ?? 0),
+            estimatedMinutes: (batt.estimated_minutes != null ? Number(batt.estimated_minutes) : null) as number | null,
           },
           cpu: { usage: Number(sys.cpu_percent ?? 0), temp: Number(sys.temperature ?? 0) },
           memory: { usage: Number(sys.memory_percent ?? 0) },
@@ -602,6 +603,28 @@ export function useWebSocket() {
         break;
       case "device_control_ack":
         robotStore.addLog("info", "Device", `${data.action} → ${data.enabled ? "ON" : "OFF"}`);
+        break;
+      case "power_policy_status": {
+        robotStore.setPowerPolicy({
+          mode: data.mode as "normal" | "eco",
+          threshold: typeof data.threshold === "number" ? data.threshold : 30,
+          manual_override: Boolean(data.manual_override),
+          simulated_battery: (data as any).simulated_battery != null ? Number((data as any).simulated_battery) : null,
+        });
+        robotStore.addLog(
+          "info",
+          "PowerPolicy",
+          `模式: ${data.mode === "eco" ? "省电" : "正常"}, 阀值: ${data.threshold}%`,
+        );
+        break;
+      }
+      case "power_policy_config":
+        robotStore.setPowerPolicy({
+          mode: data.mode as "normal" | "eco",
+          threshold: typeof data.threshold === "number" ? data.threshold : 30,
+          manual_override: Boolean(data.manual_override),
+          simulated_battery: (data as any).simulated_battery != null ? Number((data as any).simulated_battery) : null,
+        });
         break;
       case "software_install_ack":
       case "software_uninstall_ack":
@@ -842,7 +865,8 @@ export function useWebSocket() {
     connectedPort: _connectedPort,
     connect,
     disconnect,
-    send: _send,
+    send: (frame: WsMsg) => _send(frame),
+    sendWs: (frame: WsMsg) => _send(frame, true), // 强制走 WebSocket
     cleanup,
     sendMotion,
     sendMotionStop,

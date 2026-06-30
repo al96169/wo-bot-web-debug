@@ -45,6 +45,13 @@ function copyValue(value: string, label: string) {
             <div class="run-card-icon">🔋</div>
             <div class="run-card-value">{{ robotStore.systemStatus.battery.level }}%</div>
             <div class="run-card-label">电池电量</div>
+            <div class="run-card-sub">
+              ⏱ {{
+                robotStore.systemStatus.battery.estimatedMinutes != null
+                  ? `约 ${robotStore.systemStatus.battery.estimatedMinutes} 分钟`
+                  : '预计可用时长：计算中'
+              }}
+            </div>
           </div>
           <div class="run-card wifi-clickable" title="点击管理 WiFi" @click="showWifiManager = true">
             <div class="run-card-icon">📶</div>
@@ -196,6 +203,11 @@ h2 {
 .run-card-label {
   font-size: 11px;
   color: var(--text-muted);
+}
+.run-card-sub {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 4px;
 }
 .detail-list {
   display: flex;

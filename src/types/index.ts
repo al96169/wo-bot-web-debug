@@ -205,7 +205,8 @@ export type ViewName =
   | "gallery"
   | "music"
   | "settings"
-  | "processManager";
+  | "processManager"
+  | "config";
 
 /** 底部面板 tab */
 export type BottomTab = "modules" | "cmdLog" | "ssh";

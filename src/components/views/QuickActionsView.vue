@@ -13,7 +13,12 @@ const actionItems: { action: ToggleKey | "emergency"; label: string; cssClass: s
   { action: "flashlight", label: "🔦 手电", cssClass: "toggle", cmdType: "flashlight" },
   { action: "charge", label: "🔌 去充电", cssClass: "toggle", cmdType: "charge" },
   { action: "mute", label: "🔇 静音", cssClass: "toggle", cmdType: "mute" },
-  { action: "eco", label: "🔋 省电模式", cssClass: "toggle", cmdType: "eco" },
+  {
+    action: "eco",
+    get label() { return robotStore.powerPolicy.mode === "eco" ? "⚡ 省电中" : "🔋 省电模式"; },
+    cssClass: "toggle",
+    cmdType: "eco",
+  },
   { action: "emergency", label: "🛑 急停", cssClass: "danger", cmdType: "emergency" },
 ];
 
@@ -83,7 +88,11 @@ function handleVolumeChange(e: Event) {
         class="action-card"
         :class="{
           [item.cssClass]: true,
-          active: item.cssClass === 'toggle' && (appStore.toggleStates as Record<string, boolean>)[item.action],
+          active:
+            item.cssClass === 'toggle' &&
+            (item.action === 'eco'
+              ? robotStore.powerPolicy.mode === 'eco'
+              : (appStore.toggleStates as Record<string, boolean>)[item.action]),
         }"
         @click="handleAction(item.action, item.cmdType)"
       >

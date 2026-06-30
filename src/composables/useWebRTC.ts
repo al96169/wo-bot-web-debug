@@ -599,6 +599,16 @@ export function useWebRTC() {
           uptime: Number(sys.uptime ?? 0),
           hostname: String(sys.hostname ?? "--"),
         });
+        // 同步省电策略状态
+        const pp = (data.power_policy ?? {}) as Record<string, unknown>;
+        if (pp.mode) {
+          robotStore.setPowerPolicy({
+            mode: (pp.mode as "normal" | "eco") ?? "normal",
+            threshold: typeof pp.threshold === "number" ? pp.threshold : 30,
+            manual_override: Boolean(pp.manual_override),
+            simulated_battery: pp.simulated_battery != null ? Number(pp.simulated_battery) : null,
+          });
+        }
         break;
       }
       case "pong":
@@ -677,6 +687,27 @@ export function useWebRTC() {
         break;
       case "device_control_ack":
         robotStore.addLog("info", "Device", `${data.action} → ${data.enabled ? "ON" : "OFF"}`);
+        break;
+      case "power_policy_status":
+        robotStore.setPowerPolicy({
+          mode: (data.mode as "normal" | "eco") ?? "normal",
+          threshold: typeof data.threshold === "number" ? data.threshold : 30,
+          manual_override: Boolean(data.manual_override),
+          simulated_battery: data.simulated_battery != null ? Number(data.simulated_battery) : null,
+        });
+        robotStore.addLog(
+          "info",
+          "PowerPolicy",
+          `模式: ${data.mode === "eco" ? "省电" : "正常"}, 阀值: ${data.threshold}%`,
+        );
+        break;
+      case "power_policy_config":
+        robotStore.setPowerPolicy({
+          mode: (data.mode as "normal" | "eco") ?? "normal",
+          threshold: typeof data.threshold === "number" ? data.threshold : 30,
+          manual_override: Boolean(data.manual_override),
+          simulated_battery: data.simulated_battery != null ? Number(data.simulated_battery) : null,
+        });
         break;
       case "system_ack":
         robotStore.addLog("info", "System", `${data.action} → ${data.status}`);
