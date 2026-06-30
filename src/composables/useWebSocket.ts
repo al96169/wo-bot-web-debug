@@ -867,6 +867,31 @@ export function useWebSocket() {
     disconnect,
     send: (frame: WsMsg) => _send(frame),
     sendWs: (frame: WsMsg) => _send(frame, true), // 强制走 WebSocket
+    /**
+     * 发送二进制消息（混合协议：4 字节头长度 + JSON 头 + 二进制数据）
+     * 用于音频流传输（voice_broadcast）
+     */
+    sendBinary: (type: string, data: Record<string, unknown>, binaryData: Uint8Array): void => {
+      const header = JSON.stringify({ type, data });
+      const encoder = new TextEncoder();
+      const headerBytes = encoder.encode(header);
+      const headerLen = new Uint32Array([headerBytes.byteLength]);
+
+      // 拼接: [4 字节 header 长度 (big-endian)] [JSON header] [binary audio]
+      const totalLen = 4 + headerBytes.byteLength + binaryData.byteLength;
+      const combined = new Uint8Array(totalLen);
+      combined.set(new Uint8Array(headerLen.buffer), 0);
+      combined.set(headerBytes, 4);
+      combined.set(binaryData, 4 + headerBytes.byteLength);
+
+      if (_dc && _dc.readyState === "open") {
+        _dc.send(combined.buffer);
+      } else if (_ws && _ws.readyState === WebSocket.OPEN) {
+        _ws.send(combined.buffer);
+      } else {
+        console.warn("No available transport for binary message");
+      }
+    },
     cleanup,
     sendMotion,
     sendMotionStop,
