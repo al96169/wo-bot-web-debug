@@ -18,6 +18,7 @@ const {
   sendGimbalMoveEnd,
   sendGimbalCenter,
   requestCameraStatus,
+  sendBinary,
 } = useWebSocket();
 const {
   videoStream0,
@@ -34,6 +35,159 @@ const {
 
 // 云台功能是否可用（服务端 features 包含 "gimbal"）
 const gimbalAvailable = computed(() => getRemoteFeatures().includes("gimbal"));
+
+// 喊话面板
+const broadcastRecording = ref(false);
+const broadcastPhoneActive = ref(false);
+const broadcastAudioBlob = ref<Blob | null>(null);
+const broadcastAudioUrl = ref<string | null>(null);
+const broadcastStatus = ref("");
+
+let broadcastRecorder: MediaRecorder | null = null;
+let broadcastStream: MediaStream | null = null;
+let broadcastPhoneTimer: ReturnType<typeof setInterval> | null = null;
+let broadcastChunks: Blob[] = [];
+let broadcastHeaderChunk: Blob | null = null; // 电话模式第一个 chunk（含文件头）
+
+function releaseBroadcastMic() {
+  if (broadcastStream) {
+    broadcastStream.getTracks().forEach((t) => t.stop());
+    broadcastStream = null;
+  }
+}
+
+async function startBroadcastRecord() {
+  broadcastAudioBlob.value = null;
+  broadcastAudioUrl.value = null;
+  broadcastStatus.value = "";
+  broadcastChunks = [];
+  try {
+    broadcastStream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: { ideal: 48000 }, channelCount: { ideal: 1 } },
+    }).catch(() =>
+      // 降级：不指定任何约束
+      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    );
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    broadcastRecorder = new MediaRecorder(broadcastStream, {
+      mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : undefined,
+    });
+    const captureMimeType = broadcastRecorder.mimeType;
+    broadcastRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) broadcastChunks.push(e.data);
+    };
+    broadcastRecorder.onstop = async () => {
+      const blob = new Blob(broadcastChunks, { type: captureMimeType });
+      broadcastAudioBlob.value = blob;
+      broadcastAudioUrl.value = URL.createObjectURL(blob);
+      releaseBroadcastMic();
+      broadcastStatus.value = "录制完成";
+      // 自动播放
+      try {
+        const audio = new Audio(broadcastAudioUrl.value);
+        await audio.play();
+        broadcastStatus.value = "已播放";
+      } catch {
+        // ignore play errors
+      }
+    };
+    broadcastRecorder.start();
+    broadcastRecording.value = true;
+    broadcastStatus.value = "录音中...";
+  } catch {
+    broadcastStatus.value = "麦克风不可用";
+  }
+}
+
+function stopBroadcastRecord() {
+  if (broadcastRecorder && broadcastRecorder.state !== "inactive") {
+    broadcastRecorder.stop();
+    broadcastRecording.value = false;
+    broadcastRecorder = null;
+  }
+}
+
+async function sendBroadcast() {
+  if (!broadcastAudioBlob.value) return;
+  try {
+    const buffer = await broadcastAudioBlob.value.arrayBuffer();
+    const ok = sendBinary("voice_broadcast", { mode: "record", timestamp: Date.now() }, new Uint8Array(buffer));
+    broadcastStatus.value = ok ? "已发送" : "发送失败 (无连接)";
+    if (!ok) {
+      appStore.showToast("喊话发送失败：WebSocket 未连接，请刷新页面重试", "error");
+    }
+  } catch {
+    broadcastStatus.value = "发送失败";
+    appStore.showToast("喊话发送失败", "error");
+  }
+}
+
+function toggleBroadcastPhone() {
+  if (broadcastPhoneActive.value) {
+    stopBroadcastPhone();
+  } else {
+    startBroadcastPhone();
+  }
+}
+
+async function startBroadcastPhone() {
+  broadcastPhoneActive.value = false;
+  broadcastChunks = [];
+  broadcastHeaderChunk = null;
+  try {
+    broadcastStream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: { ideal: 16000 }, channelCount: { ideal: 1 } },
+    }).catch(() =>
+      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    );
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : undefined;
+    broadcastRecorder = new MediaRecorder(broadcastStream, {
+      mimeType: mimeType || undefined,
+    });
+    const phoneChunks: Blob[] = [];
+    broadcastRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        if (broadcastHeaderChunk === null) {
+          broadcastHeaderChunk = e.data; // 第一个 chunk = EBML header + CodecPrivate
+        } else {
+          phoneChunks.push(e.data);
+        }
+      }
+    };
+    broadcastRecorder.start(400);
+    const captureMimeType = broadcastRecorder.mimeType;
+    broadcastPhoneTimer = setInterval(async () => {
+      if (!broadcastPhoneActive.value || phoneChunks.length === 0) return;
+      // 每次发送都包含文件头 chunk，确保 ffmpeg 能解码
+      const parts = broadcastHeaderChunk ? [broadcastHeaderChunk, ...phoneChunks.splice(0)] : phoneChunks.splice(0);
+      const combined = new Blob(parts, { type: captureMimeType });
+      const buf = await combined.arrayBuffer();
+      sendBinary("voice_broadcast", { mode: "phone", timestamp: Date.now() }, new Uint8Array(buf));
+    }, 400);
+    broadcastPhoneActive.value = true;
+    broadcastStatus.value = "通话中";
+  } catch {
+    broadcastStatus.value = "麦克风不可用";
+  }
+}
+
+function stopBroadcastPhone() {
+  broadcastPhoneActive.value = false;
+  if (broadcastPhoneTimer) {
+    clearInterval(broadcastPhoneTimer);
+    broadcastPhoneTimer = null;
+  }
+  if (broadcastRecorder && broadcastRecorder.state !== "inactive") {
+    broadcastRecorder.stop();
+    broadcastRecorder = null;
+  }
+  releaseBroadcastMic();
+  broadcastStatus.value = "";
+}
 
 // ---- WebRTC 监控面板 ----
 const showWebRTCInfo = ref(true);
@@ -790,6 +944,32 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- 喊话 -->
+        <div class="broadcast-row">
+          <div class="broadcast-row-inner">
+            <button
+              :class="['broadcast-btn', { recording: broadcastRecording }]"
+              @mousedown="startBroadcastRecord"
+              @mouseup="stopBroadcastRecord"
+              @mouseleave="stopBroadcastRecord"
+              @touchstart.prevent="startBroadcastRecord"
+              @touchend.prevent="stopBroadcastRecord"
+            >
+              {{ broadcastRecording ? "🎤 录音中..." : "🎤 录音" }}
+            </button>
+            <button :class="['broadcast-btn', 'send']" :disabled="!broadcastAudioBlob" @click="sendBroadcast">
+              📤 发送
+            </button>
+            <button
+              :class="['broadcast-btn', 'phone', { active: broadcastPhoneActive }]"
+              @click="toggleBroadcastPhone"
+            >
+              {{ broadcastPhoneActive ? "📞 挂断" : "📞 通话" }}
+            </button>
+            <span v-if="broadcastStatus" class="broadcast-status">{{ broadcastStatus }}</span>
+          </div>
+        </div>
+
         <!-- WebRTC 监控面板 -->
         <div class="webrtc-info-panel">
           <div class="webrtc-info-header" @click="showWebRTCInfo = !showWebRTCInfo">
@@ -1211,5 +1391,61 @@ onUnmounted(() => {
   font-size: 10px;
   font-style: italic;
   padding: 4px;
+}
+
+/* ===== 喊话按钮行 ===== */
+.broadcast-row {
+  padding: 0 16px;
+}
+.broadcast-row-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.broadcast-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.broadcast-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.broadcast-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.broadcast-btn.recording {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.broadcast-btn.phone.active {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.broadcast-btn.send {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.broadcast-btn.send:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+.broadcast-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
 }
 </style>

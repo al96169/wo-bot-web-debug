@@ -222,11 +222,12 @@ export function useWebSocket() {
     _connectedPort.value = port;
     // 开发模式通过 Vite WebSocket 代理连接，绕过浏览器跨域/IP 限制
     const pv = _debugProtocolVersion >= 0 ? _debugProtocolVersion : PROTOCOL_VERSION;
+    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
     let url: string;
     if (import.meta.env.DEV) {
-      url = `ws://${window.location.host}/api/device-ws?host=${encodeURIComponent(ip)}&port=${port}&protocol_version=${pv}`;
+      url = `${wsProtocol}://${window.location.host}/api/device-ws?host=${encodeURIComponent(ip)}&port=${port}&protocol_version=${pv}`;
     } else {
-      url = `ws://${ip}:${port}?protocol_version=${pv}`;
+      url = `${wsProtocol}://${ip}:${port}?protocol_version=${pv}`;
     }
     if (_token) {
       url += `&token=${encodeURIComponent(_token)}`;
@@ -871,26 +872,26 @@ export function useWebSocket() {
      * 发送二进制消息（混合协议：4 字节头长度 + JSON 头 + 二进制数据）
      * 用于音频流传输（voice_broadcast）
      */
-    sendBinary: (type: string, data: Record<string, unknown>, binaryData: Uint8Array): void => {
+    sendBinary: (type: string, data: Record<string, unknown>, binaryData: Uint8Array): boolean => {
       const header = JSON.stringify({ type, data });
       const encoder = new TextEncoder();
       const headerBytes = encoder.encode(header);
-      const headerLen = new Uint32Array([headerBytes.byteLength]);
 
       // 拼接: [4 字节 header 长度 (big-endian)] [JSON header] [binary audio]
       const totalLen = 4 + headerBytes.byteLength + binaryData.byteLength;
       const combined = new Uint8Array(totalLen);
-      combined.set(new Uint8Array(headerLen.buffer), 0);
+      // 写入 header 长度（大端序，与后端 struct.unpack(">I") 一致）
+      new DataView(combined.buffer).setUint32(0, headerBytes.byteLength, false);
       combined.set(headerBytes, 4);
       combined.set(binaryData, 4 + headerBytes.byteLength);
 
-      if (_dc && _dc.readyState === "open") {
-        _dc.send(combined.buffer);
-      } else if (_ws && _ws.readyState === WebSocket.OPEN) {
+      // 二进制音频只能走 WebSocket（DataChannel SCTP 消息大小 ~16KB 限制，大音频会炸连）
+      if (_ws && _ws.readyState === WebSocket.OPEN) {
         _ws.send(combined.buffer);
-      } else {
-        console.warn("No available transport for binary message");
+        return true;
       }
+      console.warn("No WebSocket transport available for binary message");
+      return false;
     },
     cleanup,
     sendMotion,

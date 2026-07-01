@@ -25,7 +25,6 @@ import SettingsView from "@/components/views/SettingsView.vue";
 import ProcessManagerView from "@/components/views/ProcessManagerView.vue";
 import MusicView from "@/components/views/MusicView.vue";
 import ConfigView from "@/components/views/ConfigView.vue";
-import VoiceBroadcastView from "@/components/views/VoiceBroadcastView.vue";
 import AddDeviceDialog from "@/components/dialogs/AddDeviceDialog.vue";
 import SwitchDeviceDialog from "@/components/dialogs/SwitchDeviceDialog.vue";
 import OpsConfirmDialog from "@/components/dialogs/OpsConfirmDialog.vue";
@@ -400,7 +399,6 @@ const viewsMap: Record<ViewName, unknown> = {
   processManager: ProcessManagerView,
   music: MusicView,
   config: ConfigView,
-  voiceBroadcast: VoiceBroadcastView,
 };
 </script>
 

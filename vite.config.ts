@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 import { networkInterfaces } from 'node:os'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import mdnsDiscovery from './src/plugins/mdnsDiscovery'
 import { WebSocketServer, WebSocket } from 'ws'
 
@@ -136,6 +138,19 @@ function wsProxyPlugin() {
   }
 }
 
+// 加载自签名证书（mkcert）
+const certsDir = fileURLToPath(new URL('./certs', import.meta.url))
+const httpsConfig = (() => {
+  try {
+    return {
+      key: readFileSync(resolve(certsDir, 'localhost-key.pem')),
+      cert: readFileSync(resolve(certsDir, 'localhost.pem')),
+    }
+  } catch {
+    return undefined
+  }
+})()
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue(), mdnsDiscovery(), wsProxyPlugin()],
@@ -145,11 +160,12 @@ export default defineConfig({
     },
   },
   server: {
+    https: httpsConfig,
     host: '0.0.0.0',
     port: 9093,
     strictPort: true,
     hmr: {
-      protocol: 'ws',
+      protocol: httpsConfig ? 'wss' : 'ws',
       host: 'localhost',
       port: 9093,
     },
