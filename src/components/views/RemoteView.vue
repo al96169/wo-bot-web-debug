@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, reactive, onMounted, onUnmounted, onDeactivated, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useRobotStore } from "@/stores/robot";
 import { useWebSocket, getRemoteFeatures } from "@/composables/useWebSocket";
@@ -42,12 +42,23 @@ const broadcastPhoneActive = ref(false);
 const broadcastAudioBlob = ref<Blob | null>(null);
 const broadcastAudioUrl = ref<string | null>(null);
 const broadcastStatus = ref("");
+const broadcastCountdown = ref(0);
+const previewPlaying = ref(false);
 
 let broadcastRecorder: MediaRecorder | null = null;
 let broadcastStream: MediaStream | null = null;
 let broadcastPhoneTimer: ReturnType<typeof setInterval> | null = null;
+let broadcastCountdownTimer: ReturnType<typeof setInterval> | null = null;
 let broadcastChunks: Blob[] = [];
-let broadcastHeaderChunk: Blob | null = null; // 电话模式第一个 chunk（含文件头）
+let broadcastAudioCtx: AudioContext | null = null; // 电话模式原始 PCM 捕获
+
+function clearBroadcastCountdown() {
+  if (broadcastCountdownTimer) {
+    clearInterval(broadcastCountdownTimer);
+    broadcastCountdownTimer = null;
+  }
+  broadcastCountdown.value = 0;
+}
 
 function releaseBroadcastMic() {
   if (broadcastStream) {
@@ -60,7 +71,9 @@ async function startBroadcastRecord() {
   broadcastAudioBlob.value = null;
   broadcastAudioUrl.value = null;
   broadcastStatus.value = "";
+  previewPlaying.value = false;
   broadcastChunks = [];
+  clearBroadcastCountdown();
   try {
     broadcastStream = await navigator.mediaDevices.getUserMedia({
       audio: { sampleRate: { ideal: 48000 }, channelCount: { ideal: 1 } },
@@ -79,29 +92,37 @@ async function startBroadcastRecord() {
       if (e.data.size > 0) broadcastChunks.push(e.data);
     };
     broadcastRecorder.onstop = async () => {
+      clearBroadcastCountdown();
       const blob = new Blob(broadcastChunks, { type: captureMimeType });
       broadcastAudioBlob.value = blob;
       broadcastAudioUrl.value = URL.createObjectURL(blob);
       releaseBroadcastMic();
       broadcastStatus.value = "录制完成";
-      // 自动播放
-      try {
-        const audio = new Audio(broadcastAudioUrl.value);
-        await audio.play();
-        broadcastStatus.value = "已播放";
-      } catch {
-        // ignore play errors
-      }
     };
     broadcastRecorder.start();
     broadcastRecording.value = true;
     broadcastStatus.value = "录音中...";
+    // 60秒倒计时
+    broadcastCountdown.value = 60;
+    broadcastCountdownTimer = setInterval(() => {
+      broadcastCountdown.value--;
+      if (broadcastCountdown.value <= 0) {
+        clearBroadcastCountdown();
+        alert("最多支持60秒录音");
+        if (broadcastRecorder && broadcastRecorder.state !== "inactive") {
+          broadcastRecorder.stop();
+        }
+        broadcastRecording.value = false;
+        broadcastRecorder = null;
+      }
+    }, 1000);
   } catch {
     broadcastStatus.value = "麦克风不可用";
   }
 }
 
 function stopBroadcastRecord() {
+  clearBroadcastCountdown();
   if (broadcastRecorder && broadcastRecorder.state !== "inactive") {
     broadcastRecorder.stop();
     broadcastRecording.value = false;
@@ -124,6 +145,15 @@ async function sendBroadcast() {
   }
 }
 
+function previewBroadcast() {
+  if (!broadcastAudioUrl.value || previewPlaying.value) return;
+  const audio = new Audio(broadcastAudioUrl.value);
+  previewPlaying.value = true;
+  audio.onended = () => { previewPlaying.value = false; };
+  audio.onerror = () => { previewPlaying.value = false; };
+  audio.play().catch(() => { previewPlaying.value = false; });
+}
+
 function toggleBroadcastPhone() {
   if (broadcastPhoneActive.value) {
     stopBroadcastPhone();
@@ -135,42 +165,65 @@ function toggleBroadcastPhone() {
 async function startBroadcastPhone() {
   broadcastPhoneActive.value = false;
   broadcastChunks = [];
-  broadcastHeaderChunk = null;
   try {
     broadcastStream = await navigator.mediaDevices.getUserMedia({
-      audio: { sampleRate: { ideal: 16000 }, channelCount: { ideal: 1 } },
+      audio: { sampleRate: { ideal: 48000 }, channelCount: { ideal: 1 }, echoCancellation: false, noiseSuppression: false },
     }).catch(() =>
       navigator.mediaDevices.getUserMedia({ audio: true, video: false })
     );
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus"
-      : undefined;
-    broadcastRecorder = new MediaRecorder(broadcastStream, {
-      mimeType: mimeType || undefined,
-    });
-    const phoneChunks: Blob[] = [];
-    broadcastRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        if (broadcastHeaderChunk === null) {
-          broadcastHeaderChunk = e.data; // 第一个 chunk = EBML header + CodecPrivate
-        } else {
-          phoneChunks.push(e.data);
-        }
+
+    // 用 AudioContext + ScriptProcessorNode 直接捕获原始 PCM，绕过 WebM 编解码
+    broadcastAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 });
+    const source = broadcastAudioCtx.createMediaStreamSource(broadcastStream);
+    // ScriptProcessorNode: bufferSize=4096, 1 input channel, 1 output channel
+    const processor = broadcastAudioCtx.createScriptProcessor(4096, 1, 1);
+    const pcmAccumulator: Uint8Array[] = [];
+
+    processor.onaudioprocess = (e: AudioProcessingEvent) => {
+      const inputData = e.inputBuffer.getChannelData(0); // Float32Array
+      // Float32 [-1,1] → Int16 PCM，加 5x 增益补偿话筒低输入电平
+      const GAIN = 5.0;
+      const int16 = new Int16Array(inputData.length);
+      for (let i = 0; i < inputData.length; i++) {
+        const s = Math.max(-1, Math.min(1, inputData[i] * GAIN));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
       }
+      pcmAccumulator.push(new Uint8Array(int16.buffer));
     };
-    broadcastRecorder.start(400);
-    const captureMimeType = broadcastRecorder.mimeType;
-    broadcastPhoneTimer = setInterval(async () => {
-      if (!broadcastPhoneActive.value || phoneChunks.length === 0) return;
-      // 每次发送都包含文件头 chunk，确保 ffmpeg 能解码
-      const parts = broadcastHeaderChunk ? [broadcastHeaderChunk, ...phoneChunks.splice(0)] : phoneChunks.splice(0);
-      const combined = new Blob(parts, { type: captureMimeType });
-      const buf = await combined.arrayBuffer();
-      sendBinary("voice_broadcast", { mode: "phone", timestamp: Date.now() }, new Uint8Array(buf));
-    }, 400);
+
+    source.connect(processor);
+    // 不连接扬声器输出，避免本地回放造成回声/二次播放
+    // ScriptProcessorNode 需要输出连接到 destination 才能持续触发 onaudioprocess，
+    // 但通过填充零输出缓冲区来静音本地回放
+    processor.onaudioprocess = (function (originalHandler) {
+      return function (e: AudioProcessingEvent) {
+        originalHandler(e);
+        // 静音输出通道，防止本地回放
+        const outputData = e.outputBuffer.getChannelData(0);
+        outputData.fill(0);
+      };
+    })(processor.onaudioprocess);
+    processor.connect(broadcastAudioCtx.destination);
+
+    // 每 200ms 批量发送累积的 PCM 数据
+    broadcastPhoneTimer = setInterval(() => {
+      if (!broadcastPhoneActive.value || pcmAccumulator.length === 0) return;
+      const chunks = pcmAccumulator.splice(0);
+      const totalLen = chunks.reduce((s, c) => s + c.byteLength, 0);
+      const combined = new Uint8Array(totalLen);
+      let offset = 0;
+      for (const c of chunks) {
+        combined.set(c, offset);
+        offset += c.byteLength;
+      }
+      console.log("[Broadcast Phone] PCM %d bytes, %d frames", totalLen, chunks.length);
+      sendBinary("voice_broadcast", { mode: "phone", timestamp: Date.now(), format: "pcm_s16le", rate: 48000 }, combined);
+    }, 200);
+
     broadcastPhoneActive.value = true;
     broadcastStatus.value = "通话中";
-  } catch {
+  } catch (e) {
+    console.error("[Broadcast Phone] start error:", e);
     broadcastStatus.value = "麦克风不可用";
   }
 }
@@ -180,6 +233,10 @@ function stopBroadcastPhone() {
   if (broadcastPhoneTimer) {
     clearInterval(broadcastPhoneTimer);
     broadcastPhoneTimer = null;
+  }
+  if (broadcastAudioCtx) {
+    broadcastAudioCtx.close().catch(() => {});
+    broadcastAudioCtx = null;
   }
   if (broadcastRecorder && broadcastRecorder.state !== "inactive") {
     broadcastRecorder.stop();
@@ -813,6 +870,9 @@ onUnmounted(() => {
   window.removeEventListener("keyup", handleKeyup);
   document.removeEventListener("visibilitychange", onVisibilityChange);
   stopKeyboardLoop();
+  // 离开页面时断开录音/通话
+  stopBroadcast();
+  stopBroadcastPhone();
   if (_debugTimer0) {
     clearInterval(_debugTimer0);
     _debugTimer0 = null;
@@ -821,6 +881,12 @@ onUnmounted(() => {
     clearInterval(_debugTimer1);
     _debugTimer1 = null;
   }
+});
+
+// KeepAlive 缓存场景：切换面板时自动挂断录音/通话
+onDeactivated(() => {
+  stopBroadcast();
+  stopBroadcastPhone();
 });
 </script>
 
@@ -955,7 +1021,15 @@ onUnmounted(() => {
               @touchstart.prevent="startBroadcastRecord"
               @touchend.prevent="stopBroadcastRecord"
             >
-              {{ broadcastRecording ? "🎤 录音中..." : "🎤 录音" }}
+              {{ broadcastRecording ? `🎤 录音中... ${broadcastCountdown}s` : "🎤 录音" }}
+            </button>
+            <button
+              v-if="broadcastAudioUrl"
+              :class="['broadcast-btn', 'preview', { playing: previewPlaying }]"
+              :disabled="previewPlaying"
+              @click="previewBroadcast"
+            >
+              {{ previewPlaying ? "▶ 播放中" : "🔊 试听" }}
             </button>
             <button :class="['broadcast-btn', 'send']" :disabled="!broadcastAudioBlob" @click="sendBroadcast">
               📤 发送
@@ -1442,6 +1516,22 @@ onUnmounted(() => {
 .broadcast-btn.send:hover:not(:disabled) {
   background: var(--accent);
   color: var(--bg-primary);
+}
+.broadcast-btn.preview {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.broadcast-btn.preview:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+.broadcast-btn.preview.playing {
+  opacity: 0.6;
+}
+.broadcast-btn .countdown {
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  margin-left: 4px;
 }
 .broadcast-status {
   font-size: 12px;
