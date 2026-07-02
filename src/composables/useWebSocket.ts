@@ -871,8 +871,9 @@ export function useWebSocket() {
     /**
      * 发送二进制消息（混合协议：4 字节头长度 + JSON 头 + 二进制数据）
      * 用于音频流传输（voice_broadcast）
+     * @param preferDataChannel - true=电话模式优先 DataChannel（低延迟），false/undefined=WebSocket（无大小限制）
      */
-    sendBinary: (type: string, data: Record<string, unknown>, binaryData: Uint8Array): boolean => {
+    sendBinary: (type: string, data: Record<string, unknown>, binaryData: Uint8Array, preferDataChannel = false): boolean => {
       const header = JSON.stringify({ type, data });
       const encoder = new TextEncoder();
       const headerBytes = encoder.encode(header);
@@ -885,12 +886,16 @@ export function useWebSocket() {
       combined.set(headerBytes, 4);
       combined.set(binaryData, 4 + headerBytes.byteLength);
 
-      // 二进制音频只能走 WebSocket（DataChannel SCTP 消息大小 ~16KB 限制，大音频会炸连）
+      // 电话模式优先 DataChannel（低延迟），录音模式走 WebSocket（无大小限制）
+      if (preferDataChannel && _dc && _dc.readyState === "open") {
+        _dc.send(combined.buffer);
+        return true;
+      }
       if (_ws && _ws.readyState === WebSocket.OPEN) {
         _ws.send(combined.buffer);
         return true;
       }
-      console.warn("No WebSocket transport available for binary message");
+      console.warn("No transport available for binary message");
       return false;
     },
     cleanup,
