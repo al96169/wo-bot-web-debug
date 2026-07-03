@@ -873,7 +873,12 @@ export function useWebSocket() {
      * 用于音频流传输（voice_broadcast）
      * @param preferDataChannel - true=电话模式优先 DataChannel（低延迟），false/undefined=WebSocket（无大小限制）
      */
-    sendBinary: (type: string, data: Record<string, unknown>, binaryData: Uint8Array, preferDataChannel = false): boolean => {
+    sendBinary: (
+      type: string,
+      data: Record<string, unknown>,
+      binaryData: Uint8Array,
+      preferDataChannel = false,
+    ): boolean => {
       const header = JSON.stringify({ type, data });
       const encoder = new TextEncoder();
       const headerBytes = encoder.encode(header);

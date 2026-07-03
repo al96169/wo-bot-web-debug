@@ -75,15 +75,15 @@ async function startBroadcastRecord() {
   broadcastChunks = [];
   clearBroadcastCountdown();
   try {
-    broadcastStream = await navigator.mediaDevices.getUserMedia({
-      audio: { sampleRate: { ideal: 48000 }, channelCount: { ideal: 1 } },
-    }).catch(() =>
-      // 降级：不指定任何约束
-      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-    );
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus"
-      : "audio/webm";
+    broadcastStream = await navigator.mediaDevices
+      .getUserMedia({
+        audio: { sampleRate: { ideal: 48000 }, channelCount: { ideal: 1 } },
+      })
+      .catch(() =>
+        // 降级：不指定任何约束
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false }),
+      );
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
     broadcastRecorder = new MediaRecorder(broadcastStream, {
       mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : undefined,
     });
@@ -149,9 +149,15 @@ function previewBroadcast() {
   if (!broadcastAudioUrl.value || previewPlaying.value) return;
   const audio = new Audio(broadcastAudioUrl.value);
   previewPlaying.value = true;
-  audio.onended = () => { previewPlaying.value = false; };
-  audio.onerror = () => { previewPlaying.value = false; };
-  audio.play().catch(() => { previewPlaying.value = false; });
+  audio.onended = () => {
+    previewPlaying.value = false;
+  };
+  audio.onerror = () => {
+    previewPlaying.value = false;
+  };
+  audio.play().catch(() => {
+    previewPlaying.value = false;
+  });
 }
 
 function toggleBroadcastPhone() {
@@ -166,11 +172,16 @@ async function startBroadcastPhone() {
   broadcastPhoneActive.value = false;
   broadcastChunks = [];
   try {
-    broadcastStream = await navigator.mediaDevices.getUserMedia({
-      audio: { sampleRate: { ideal: 48000 }, channelCount: { ideal: 1 }, echoCancellation: false, noiseSuppression: false },
-    }).catch(() =>
-      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-    );
+    broadcastStream = await navigator.mediaDevices
+      .getUserMedia({
+        audio: {
+          sampleRate: { ideal: 48000 },
+          channelCount: { ideal: 1 },
+          echoCancellation: false,
+          noiseSuppression: false,
+        },
+      })
+      .catch(() => navigator.mediaDevices.getUserMedia({ audio: true, video: false }));
 
     // 用 AudioContext + ScriptProcessorNode 直接捕获原始 PCM，绕过 WebM 编解码
     broadcastAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 });
@@ -186,23 +197,14 @@ async function startBroadcastPhone() {
       const int16 = new Int16Array(inputData.length);
       for (let i = 0; i < inputData.length; i++) {
         const s = Math.max(-1, Math.min(1, inputData[i] * GAIN));
-        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
       }
       pcmAccumulator.push(new Uint8Array(int16.buffer));
+      // 静音输出通道，避免本地回放造成回声
+      e.outputBuffer.getChannelData(0).fill(0);
     };
 
     source.connect(processor);
-    // 不连接扬声器输出，避免本地回放造成回声/二次播放
-    // ScriptProcessorNode 需要输出连接到 destination 才能持续触发 onaudioprocess，
-    // 但通过填充零输出缓冲区来静音本地回放
-    processor.onaudioprocess = (function (originalHandler) {
-      return function (e: AudioProcessingEvent) {
-        originalHandler(e);
-        // 静音输出通道，防止本地回放
-        const outputData = e.outputBuffer.getChannelData(0);
-        outputData.fill(0);
-      };
-    })(processor.onaudioprocess);
     processor.connect(broadcastAudioCtx.destination);
 
     // 每 200ms 批量发送累积的 PCM 数据
@@ -217,7 +219,11 @@ async function startBroadcastPhone() {
         offset += c.byteLength;
       }
       console.log("[Broadcast Phone] PCM %d bytes, %d frames", totalLen, chunks.length);
-      sendBinary("voice_broadcast", { mode: "phone", timestamp: Date.now(), format: "pcm_s16le", rate: 48000 }, combined);
+      sendBinary(
+        "voice_broadcast",
+        { mode: "phone", timestamp: Date.now(), format: "pcm_s16le", rate: 48000 },
+        combined,
+      );
     }, 200);
 
     broadcastPhoneActive.value = true;
@@ -871,7 +877,7 @@ onUnmounted(() => {
   document.removeEventListener("visibilitychange", onVisibilityChange);
   stopKeyboardLoop();
   // 离开页面时断开录音/通话
-  stopBroadcast();
+  stopBroadcastRecord();
   stopBroadcastPhone();
   if (_debugTimer0) {
     clearInterval(_debugTimer0);
@@ -885,7 +891,7 @@ onUnmounted(() => {
 
 // KeepAlive 缓存场景：切换面板时自动挂断录音/通话
 onDeactivated(() => {
-  stopBroadcast();
+  stopBroadcastRecord();
   stopBroadcastPhone();
 });
 </script>
@@ -1034,10 +1040,7 @@ onDeactivated(() => {
             <button :class="['broadcast-btn', 'send']" :disabled="!broadcastAudioBlob" @click="sendBroadcast">
               📤 发送
             </button>
-            <button
-              :class="['broadcast-btn', 'phone', { active: broadcastPhoneActive }]"
-              @click="toggleBroadcastPhone"
-            >
+            <button :class="['broadcast-btn', 'phone', { active: broadcastPhoneActive }]" @click="toggleBroadcastPhone">
               {{ broadcastPhoneActive ? "📞 挂断" : "📞 通话" }}
             </button>
             <span v-if="broadcastStatus" class="broadcast-status">{{ broadcastStatus }}</span>
