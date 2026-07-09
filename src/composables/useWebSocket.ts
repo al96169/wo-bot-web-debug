@@ -3,7 +3,15 @@ import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
 import { resolveWebRTCAnswer, handleWebRTCIceCandidate } from "./useWebRTC";
-import type { DanceInfo, Module, MusicStatus, MusicTrack, ServiceInfo, Software } from "../types";
+import type {
+  DanceInfo,
+  Module,
+  MusicStatus,
+  MusicTrack,
+  ServiceInfo,
+  Software,
+  SoftwareTask,
+} from "../types";
 
 /* ============================================================
  * wo-bot-web-debug - WebSocket + WebRTC 通信层
@@ -629,9 +637,30 @@ export function useWebSocket() {
         break;
       case "software_install_ack":
       case "software_uninstall_ack":
-      case "software_upgrade_ack":
-        robotStore.addLog("info", "Software", `${data.package} → ${data.status}`);
+      case "software_upgrade_ack": {
+        const action = msg.type.replace("software_", "").replace("_ack", "") as SoftwareTask["action"];
+        const pkg = String(data.package ?? "");
+        // 后端成功状态：installed/removed/upgraded/already_latest；失败状态：failed/protected/permission_denied/not_in_whitelist
+        const failStatuses = ["failed", "protected", "permission_denied", "not_in_whitelist", "error"];
+        const status = String(data.status ?? "failed");
+        const ok = !failStatuses.includes(status);
+        const fromVersion = typeof data.old_version === "string" ? data.old_version : undefined;
+        const toVersion = typeof data.new_version === "string" ? data.new_version : undefined;
+        robotStore.updateSoftwareTaskByPackage(
+          pkg,
+          { status: ok ? "success" : "failed", completedAt: Date.now(), fromVersion, toVersion },
+          action,
+        );
+        robotStore.addLog("info", "Software", `${pkg} → ${status}`);
+        // already_latest 特殊提示
+        if (status === "already_latest") {
+          appStore.showToast(`${pkg} 已是最新版本`, "info");
+        }
+        // 安装/卸载/升级完成后自动刷新列表
+        requestSoftwareList();
+        requestSoftwareAvailable();
         break;
+      }
       case "gimbal_status":
         robotStore.setGimbal(
           typeof data.pan === "number" ? data.pan : 90,
@@ -667,9 +696,31 @@ export function useWebSocket() {
         }
         break;
       }
-      case "software_search_result": {
+      case "software_available": {
         if (Array.isArray(data.packages)) {
           robotStore.setAvailableSoftware(data.packages as Software[]);
+        }
+        break;
+      }
+      case "software_progress": {
+        const pkg = String(data.package ?? "");
+        if (pkg) {
+          robotStore.updateSoftwareTaskByPackage(pkg, {
+            progress: typeof data.progress === "number" ? data.progress : 0,
+            stage: String(data.stage ?? ""),
+          });
+          const line = String(data.output ?? "");
+          if (line) robotStore.appendSoftwareTaskOutput(pkg, line);
+        }
+        break;
+      }
+      case "software_updates_available": {
+        // 发现可更新软件，提示用户到软件管理页面升级
+        const updates = Array.isArray(data.updates) ? data.updates : [];
+        if (updates.length > 0) {
+          const names = updates.map((u: any) => u.display_name || u.name).join("、");
+          appStore.showToast(`发现 ${updates.length} 个可更新软件：${names}，请到软件管理页面升级`, "info");
+          robotStore.addLog("info", "Software", `发现 ${updates.length} 个可更新软件：${names}`);
         }
         break;
       }
@@ -823,8 +874,8 @@ export function useWebSocket() {
   function requestSoftwareList(): void {
     _send({ type: "software_list", data: {} });
   }
-  function requestSoftwareSearch(keyword: string): void {
-    _send({ type: "software_search", data: { keyword } });
+  function requestSoftwareAvailable(): void {
+    _send({ type: "software_available", data: {} });
   }
   function requestModuleList(): void {
     _send({ type: "module_list", data: {} });
@@ -919,7 +970,7 @@ export function useWebSocket() {
     sendGimbalMoveEnd,
     sendGimbalCenter,
     requestSoftwareList,
-    requestSoftwareSearch,
+    requestSoftwareAvailable,
     requestModuleList,
     sendDeviceControl,
     sendSoftwareAction,

@@ -9,6 +9,7 @@ import type {
   MusicTrack,
   ServiceInfo,
   Software,
+  SoftwareTask,
 } from "../types";
 
 /* ============================================================
@@ -79,8 +80,11 @@ export const useRobotStore = defineStore("robot", {
     /** 本地安装的软件列表（mock / 实际） */
     _mockInstalled: [] as Software[],
 
-    /** 软件搜索可用结果 */
+    /** 白名单内未安装的软件列表 */
     softwareAvailable: [] as Software[],
+
+    /** 软件操作任务（安装/卸载/升级） */
+    softwareTasks: [] as SoftwareTask[],
 
     /** 日志 */
     logs: [] as LogEntry[],
@@ -304,6 +308,42 @@ export const useRobotStore = defineStore("robot", {
 
     setAvailableSoftware(list: Software[]): void {
       this.softwareAvailable = list;
+    },
+
+    /** 创建一个新的软件操作任务 */
+    addSoftwareTask(task: SoftwareTask): void {
+      this.softwareTasks.push(task);
+    },
+
+    /** 按包名更新进行中的任务（可选按 action 精确匹配） */
+    updateSoftwareTaskByPackage(
+      pkg: string,
+      updates: Partial<SoftwareTask>,
+      action?: SoftwareTask["action"],
+    ): void {
+      for (let i = this.softwareTasks.length - 1; i >= 0; i--) {
+        const t = this.softwareTasks[i];
+        if (t.package === pkg && t.status === "running" && (action === undefined || t.action === action)) {
+          Object.assign(t, updates);
+          return;
+        }
+      }
+    },
+
+    /** 追加进行中任务的日志输出 */
+    appendSoftwareTaskOutput(pkg: string, line: string): void {
+      for (let i = this.softwareTasks.length - 1; i >= 0; i--) {
+        const t = this.softwareTasks[i];
+        if (t.package === pkg && t.status === "running") {
+          t.output = t.output ? t.output + "\n" + line : line;
+          return;
+        }
+      }
+    },
+
+    /** 清空所有软件任务 */
+    clearSoftwareTasks(): void {
+      this.softwareTasks = [];
     },
 
     /* ---- 图库 ---- */

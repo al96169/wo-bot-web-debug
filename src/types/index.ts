@@ -67,14 +67,31 @@ export interface Message {
 
 export interface Software {
   name: string;
-  version: string;
-  size: string;
-  installDate: string;
+  display_name: string;
+  description: string;
+  version?: string;
+  category: string;
+  critical: boolean;
   icon: string;
-  source: string;
-  description?: string;
-  installed?: boolean;
-  category?: string;
+  installed: boolean;
+  upgradable?: boolean;
+}
+
+/** 软件操作任务（安装/卸载/升级） */
+export interface SoftwareTask {
+  id: string;
+  package: string;
+  action: "install" | "uninstall" | "upgrade";
+  progress: number;
+  stage: string;
+  output: string;
+  status: "running" | "success" | "failed";
+  startedAt: number;
+  completedAt?: number;
+  /** 操作前版本（卸载/升级时有值） */
+  fromVersion?: string;
+  /** 操作后版本（安装/升级成功时有值） */
+  toVersion?: string;
 }
 
 /* ---- 日志 ---- */

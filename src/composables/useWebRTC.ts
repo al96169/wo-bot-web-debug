@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
-import type { DanceInfo, MusicStatus, MusicTrack, ServiceInfo } from "../types";
+import type { DanceInfo, MusicStatus, MusicTrack, ServiceInfo, SoftwareTask } from "../types";
 import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime } from "./useWebSocket";
 
 /* ============================================================
@@ -632,35 +632,85 @@ export function useWebRTC() {
         robotStore.setInstalledSoftware(
           pkgs.map((p) => ({
             name: String(p.name ?? ""),
-            version: String(p.version ?? ""),
-            size: String(p.size ?? "--"),
-            installDate: String(p.install_date ?? "--"),
-            source: String(p.source ?? "apt"),
-            icon: "",
+            display_name: String(p.display_name ?? p.name ?? ""),
+            description: String(p.description ?? ""),
+            ...(p.version != null ? { version: String(p.version) } : {}),
+            category: String(p.category ?? "other"),
+            critical: Boolean(p.critical ?? false),
+            icon: String(p.icon ?? ""),
+            installed: true,
+            ...(p.upgradable != null ? { upgradable: Boolean(p.upgradable) } : {}),
           })),
         );
         break;
       }
-      case "software_search_result": {
+      case "software_available": {
         const pkgs = Array.isArray(data.packages) ? (data.packages as Array<Record<string, unknown>>) : [];
         robotStore.setAvailableSoftware(
           pkgs.map((p) => ({
             name: String(p.name ?? ""),
+            display_name: String(p.display_name ?? p.name ?? ""),
             description: String(p.description ?? ""),
-            version: "--",
-            size: "--",
-            installDate: "--",
-            source: "apt",
-            icon: "",
+            ...(p.version != null ? { version: String(p.version) } : {}),
+            category: String(p.category ?? "other"),
+            critical: Boolean(p.critical ?? false),
+            icon: String(p.icon ?? ""),
+            installed: false,
           })),
         );
         break;
       }
+      case "software_progress": {
+        const pkg = String(data.package ?? "");
+        if (pkg) {
+          robotStore.updateSoftwareTaskByPackage(pkg, {
+            progress: typeof data.progress === "number" ? data.progress : 0,
+            stage: String(data.stage ?? ""),
+          });
+          const line = String(data.output ?? "");
+          if (line) robotStore.appendSoftwareTaskOutput(pkg, line);
+        }
+        break;
+      }
+      case "software_updates_available": {
+        // 发现可更新软件，提示用户到软件管理页面升级
+        const updates = Array.isArray(data.updates) ? data.updates : [];
+        if (updates.length > 0) {
+          const names = updates.map((u: any) => u.display_name || u.name).join("、");
+          appStore.showToast(`发现 ${updates.length} 个可更新软件：${names}，请到软件管理页面升级`, "info");
+          robotStore.addLog("info", "Software", `发现 ${updates.length} 个可更新软件：${names}`);
+        }
+        break;
+      }
       case "software_install_ack":
       case "software_uninstall_ack":
-      case "software_upgrade_ack":
-        robotStore.addLog("info", "Software", `${data.package} → ${data.status}`);
+      case "software_upgrade_ack": {
+        const action = msgType.replace("software_", "").replace("_ack", "") as SoftwareTask["action"];
+        const pkg = String(data.package ?? "");
+        // 后端成功状态：installed/removed/upgraded/already_latest；失败状态：failed/protected/permission_denied/not_in_whitelist
+        const failStatuses = ["failed", "protected", "permission_denied", "not_in_whitelist", "error"];
+        const status = String(data.status ?? "failed");
+        const ok = !failStatuses.includes(status);
+        const fromVersion = typeof data.old_version === "string" ? data.old_version : undefined;
+        const toVersion = typeof data.new_version === "string" ? data.new_version : undefined;
+        robotStore.updateSoftwareTaskByPackage(
+          pkg,
+          { status: ok ? "success" : "failed", completedAt: Date.now(), fromVersion, toVersion },
+          action,
+        );
+        robotStore.addLog("info", "Software", `${pkg} → ${status}`);
+        // already_latest 特殊提示
+        if (status === "already_latest") {
+          appStore.showToast(`${pkg} 已是最新版本`, "info");
+        }
+        // 安装/卸载/升级完成后自动刷新列表（经 WebSocket 信令通道）
+        const _ws = getSignalingWs();
+        if (_ws && _ws.readyState === WebSocket.OPEN) {
+          _ws.send(JSON.stringify({ type: "software_list", data: {} }));
+          _ws.send(JSON.stringify({ type: "software_available", data: {} }));
+        }
         break;
+      }
       case "module_list": {
         robotStore.setModules(Array.isArray(data.modules) ? (data.modules as any) : []);
         break;

@@ -241,49 +241,60 @@ export function useMock() {
   }
 
   function generateMockSoftware(): void {
-    const swList: Software[] = [
+    const installed: Software[] = [
       {
         name: "wo-nav-core",
+        display_name: "导航核心",
+        description: "机器人导航与定位服务",
         version: "2.1.0",
-        size: "45 MB",
-        installDate: "2025-03-15",
-        icon: "nav",
-        source: "official",
+        category: "navigation",
+        critical: true,
+        icon: "🧭",
+        installed: true,
       },
       {
         name: "wo-vision-sdk",
+        display_name: "视觉 SDK",
+        description: "图像识别与视觉处理",
         version: "1.8.3",
-        size: "128 MB",
-        installDate: "2025-04-02",
-        icon: "vision",
-        source: "official",
+        category: "vision",
+        critical: false,
+        icon: "📷",
+        installed: true,
       },
       {
         name: "wo-slam-engine",
+        display_name: "SLAM 引擎",
+        description: "即时定位与建图",
         version: "3.0.1",
-        size: "256 MB",
-        installDate: "2025-05-10",
-        icon: "slam",
-        source: "official",
-      },
-      {
-        name: "community-utils",
-        version: "0.9.5",
-        size: "8 MB",
-        installDate: "2025-05-22",
-        icon: "utils",
-        source: "community",
-      },
-      {
-        name: "debug-tools",
-        version: "1.2.0",
-        size: "12 MB",
-        installDate: "2025-05-28",
-        icon: "debug",
-        source: "community",
+        category: "slam",
+        critical: true,
+        icon: "🗺️",
+        installed: true,
       },
     ];
-    robotStore.setInstalledSoftware(swList);
+    const available: Software[] = [
+      {
+        name: "wo-voice-assist",
+        display_name: "语音助手",
+        description: "离线语音交互服务",
+        category: "voice",
+        critical: false,
+        icon: "🎤",
+        installed: false,
+      },
+      {
+        name: "wo-remote-debug",
+        display_name: "远程调试",
+        description: "远程调试与日志工具",
+        category: "debug",
+        critical: false,
+        icon: "🔧",
+        installed: false,
+      },
+    ];
+    robotStore.setInstalledSoftware(installed);
+    robotStore.setAvailableSoftware(available);
   }
 
   /* ---- Mock 定时器 ---- */
