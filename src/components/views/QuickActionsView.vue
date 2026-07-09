@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onUnmounted, ref } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useRobotStore } from "@/stores/robot";
 import { useWebSocket } from "@/composables/useWebSocket";
@@ -8,8 +9,73 @@ const appStore = useAppStore();
 const robotStore = useRobotStore();
 const { sendDeviceControl, sendEmergencyStop, sendMusicCommand } = useWebSocket();
 
+// ---- 寻找设备：二态 + 30s 倒计时 ----
+const FIND_DURATION = 30;
+const findActive = ref(false);
+const findRemaining = ref(FIND_DURATION);
+let findTimer: ReturnType<typeof setInterval> | null = null;
+
+function clearFindTimer() {
+  if (findTimer) {
+    clearInterval(findTimer);
+    findTimer = null;
+  }
+}
+
+function startFindCountdown() {
+  clearFindTimer();
+  findRemaining.value = FIND_DURATION;
+  findTimer = setInterval(() => {
+    findRemaining.value -= 1;
+    if (findRemaining.value <= 0) {
+      // 倒计时结束：服务端会自动停止，前端仅需复位 UI
+      clearFindTimer();
+      findActive.value = false;
+      findRemaining.value = FIND_DURATION;
+    }
+  }, 1000);
+}
+
+function handleFind() {
+  if (findActive.value) {
+    // 寻找中 → 手动停止
+    findActive.value = false;
+    clearFindTimer();
+    findRemaining.value = FIND_DURATION;
+    robotStore.addCmdLog({
+      time: textTime(),
+      direction: "send",
+      type: "find",
+      data: "find_device → OFF",
+    });
+    robotStore.addLog("info", "QuickAction", "寻找设备: 停止");
+    sendDeviceControl("find_device", false);
+  } else {
+    // 空闲 → 开始寻找
+    findActive.value = true;
+    startFindCountdown();
+    robotStore.addCmdLog({
+      time: textTime(),
+      direction: "send",
+      type: "find",
+      data: "find_device → ON",
+    });
+    robotStore.addLog("info", "QuickAction", "寻找设备: 开始");
+    sendDeviceControl("find_device", true);
+  }
+}
+
+onUnmounted(() => clearFindTimer());
+
 const actionItems: { action: ToggleKey | "emergency"; label: string; cssClass: string; cmdType: string }[] = [
-  { action: "find", label: "🔔 寻找设备", cssClass: "toggle", cmdType: "find" },
+  {
+    action: "find",
+    get label() {
+      return findActive.value ? `⏹ 停止 ${findRemaining.value}s` : "🔔 寻找设备";
+    },
+    cssClass: "toggle",
+    cmdType: "find",
+  },
   { action: "flashlight", label: "🔦 手电", cssClass: "toggle", cmdType: "flashlight" },
   { action: "charge", label: "🔌 去充电", cssClass: "toggle", cmdType: "charge" },
   { action: "mute", label: "🔇 静音", cssClass: "toggle", cmdType: "mute" },
@@ -29,7 +95,12 @@ function textTime() {
 }
 
 function handleAction(action: string, cmdType: string) {
-  const isToggle = ["find", "flashlight", "charge", "mute", "eco"].includes(action);
+  // 寻找设备：独立二态 + 倒计时处理
+  if (action === "find") {
+    handleFind();
+    return;
+  }
+  const isToggle = ["flashlight", "charge", "mute", "eco"].includes(action);
   if (isToggle) {
     const key = action as ToggleKey;
     const next = !appStore.toggleStates[key];
@@ -92,9 +163,11 @@ function handleVolumeChange(e: Event) {
           [item.cssClass]: true,
           active:
             item.cssClass === 'toggle' &&
-            (item.action === 'eco'
-              ? robotStore.powerPolicy.mode === 'eco'
-              : (appStore.toggleStates as Record<string, boolean>)[item.action]),
+            (item.action === 'find'
+              ? findActive
+              : item.action === 'eco'
+                ? robotStore.powerPolicy.mode === 'eco'
+                : (appStore.toggleStates as Record<string, boolean>)[item.action]),
         }"
         @click="handleAction(item.action, item.cmdType)"
       >
