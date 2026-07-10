@@ -5,6 +5,7 @@ import { useRobotStore, type CameraInfo } from "../stores/robot";
 import { resolveWebRTCAnswer, handleWebRTCIceCandidate } from "./useWebRTC";
 import type {
   DanceInfo,
+  LogEntry,
   Module,
   MusicStatus,
   MusicTrack,
@@ -251,7 +252,6 @@ export function useWebSocket() {
         socket.close();
         appStore.connection = "error";
         appStore.showToast(`连接超时: ${ip}:${port}`, "error");
-        robotStore.addLog("error", "Signaling", `连接超时: ${ip}:${port}`);
         maybeReconnect(ip, port);
       }
     }, CONNECT_TIMEOUT);
@@ -279,7 +279,7 @@ export function useWebSocket() {
         lastMessage.value = frame;
         handleSignalingMessage(frame);
       } catch {
-        robotStore.addLog("warn", "Signaling", "收到非 JSON 消息");
+        /* 非 JSON 消息忽略 */
       }
     };
 
@@ -287,7 +287,6 @@ export function useWebSocket() {
       console.error("[WS] onerror 触发:", { ip, port, readyState: socket.readyState, isActive: socket === _ws });
       appStore.connection = "error";
       appStore.showToast(`连接失败: ${ip}:${port}`, "error");
-      robotStore.addLog("error", "Signaling", `连接错误: ${ip}:${port}`);
     };
 
     socket.onclose = (event: CloseEvent) => {
@@ -318,7 +317,6 @@ export function useWebSocket() {
       }
       appStore.connection = "disconnected";
       appStore.setSSHConnected(false);
-      robotStore.addLog("warn", "Signaling", `信令已断开: ${ip}:${port}`);
       maybeReconnect(ip, port);
     };
   }
@@ -342,7 +340,6 @@ export function useWebSocket() {
     appStore.connection = "disconnected";
     _remoteFeatures.value = []; // 清空 features，下次连接重新获取
     appStore.setSSHConnected(false);
-    robotStore.addLog("info", "Signaling", "主动断开信令");
   }
 
   // ---- 心跳 ----
@@ -356,7 +353,6 @@ export function useWebSocket() {
         stopHeartbeat();
         // 主动触发重连
         if (_connectedIp.value && _connectedPort.value) {
-          robotStore.addLog("warn", "Signaling", "检测到连接断开，尝试重连...");
           maybeReconnect(_connectedIp.value, _connectedPort.value);
         }
         return;
@@ -364,7 +360,6 @@ export function useWebSocket() {
       // 检查上次 pong 是否超时
       if (Date.now() - _lastPongTime > HEARTBEAT_INTERVAL + HEARTBEAT_TIMEOUT) {
         console.warn("[WS] 心跳超时: 无 pong 回应 >", HEARTBEAT_INTERVAL + HEARTBEAT_TIMEOUT, "ms");
-        robotStore.addLog("warn", "Signaling", "心跳超时，连接已断开");
         // 关闭当前连接，onclose 会触发重连
         _ws.close();
         return;
@@ -410,7 +405,6 @@ export function useWebSocket() {
     reconnectCount.value++;
     const strategy = _handshakeAccepted ? "保活" : "首次连接";
     console.log("[WS] maybeReconnect() 安排重连 (", strategy, "):", reconnectCount.value, "/", maxRetries);
-    robotStore.addLog("info", "Signaling", `正在尝试重连 (${reconnectCount.value}/${maxRetries})...`);
     _reconnectTimer = setTimeout(() => connect(ip, port), RECONNECT_DELAY * reconnectCount.value);
   }
 
@@ -435,7 +429,6 @@ export function useWebSocket() {
         appStore.connection = "connected";
         appStore.showToast("信令通道已建立", "success");
         reconnectCount.value = 0;
-        robotStore.addLog("info", "Signaling", `信令已连接到 ${_connectedIp.value}:${_connectedPort.value}`);
         devicesStore.setRobotInfo({
           robot_id: String(data.robot_id ?? ""),
           name: String(data.name ?? ""),
@@ -538,7 +531,6 @@ export function useWebSocket() {
         break;
       }
       case "service_control_ack": {
-        robotStore.addLog("info", "Service", `${data.service_id} → ${data.action} (${data.status})`);
         if (Array.isArray(data.services) && data.services.length > 0) {
           robotStore.setServices(data.services as ServiceInfo[]);
         }
@@ -572,14 +564,41 @@ export function useWebSocket() {
         appStore._lastPing = _lastPongTime;
         break;
       case "logs": {
-        const logs = Array.isArray(data.logs) ? (data.logs as Array<Record<string, unknown>>) : [];
-        for (const l of logs) {
-          const level = (["debug", "info", "warn", "error"].includes(String(l.level)) ? l.level : "info") as
-            | "debug"
-            | "info"
-            | "warn"
-            | "error";
-          robotStore.addLog(level, String(l.source ?? "remote"), String(l.message ?? ""));
+        const rawLogs = Array.isArray(data.logs) ? (data.logs as Array<Record<string, unknown>>) : [];
+        const totalLines = Number(data.total_lines ?? 0);
+        const hasNextSince = data.next_since !== undefined;
+        const nextSince = Number(data.next_since ?? 0);
+        const hasMore = Boolean(data.has_more);
+        const mode = String(data.mode ?? "tail");
+        const mapped: LogEntry[] = rawLogs.map((l) => {
+          const rawLevel = String(l.level ?? "info").toLowerCase();
+          const level = (rawLevel === "warning"
+            ? "warn"
+            : ["debug", "info", "warn", "error"].includes(rawLevel)
+              ? rawLevel
+              : "info") as LogEntry["level"];
+          const timestamp = String(l.timestamp ?? l.time ?? "");
+          const lineNo = Number(l.line_no ?? 0);
+          return {
+            id: `ln-${lineNo}`,
+            lineNo,
+            time: timestamp,
+            level,
+            source: String(l.source ?? "remote"),
+            message: String(l.message ?? ""),
+          };
+        });
+        const meta = { totalLines, nextSince, hasMore };
+        if (mode === "since") {
+          robotStore.appendLogs(mapped, hasNextSince ? meta : undefined);
+        } else if (mode === "before") {
+          robotStore.prependLogs(mapped);
+          if (hasNextSince) {
+            robotStore.logTotalLines = totalLines;
+            robotStore.logHasMore = hasMore;
+          }
+        } else {
+          robotStore.setLogs(mapped, hasNextSince ? meta : undefined);
         }
         break;
       }
@@ -601,17 +620,14 @@ export function useWebSocket() {
         appStore.showToast("急停已触发", "error");
         break;
       case "system_ack":
-        robotStore.addLog("info", "System", `${data.action} → ${data.status}`);
         break;
       case "module_list": {
         robotStore.setModules(Array.isArray(data.modules) ? (data.modules as Module[]) : []);
         break;
       }
       case "module_control_ack":
-        robotStore.addLog("info", "Module", `${data.module_id} → ${data.action} (${data.status})`);
         break;
       case "device_control_ack":
-        robotStore.addLog("info", "Device", `${data.action} → ${data.enabled ? "ON" : "OFF"}`);
         break;
       case "power_policy_status": {
         robotStore.setPowerPolicy({
@@ -620,11 +636,6 @@ export function useWebSocket() {
           manual_override: Boolean(data.manual_override),
           simulated_battery: (data as any).simulated_battery != null ? Number((data as any).simulated_battery) : null,
         });
-        robotStore.addLog(
-          "info",
-          "PowerPolicy",
-          `模式: ${data.mode === "eco" ? "省电" : "正常"}, 阀值: ${data.threshold}%`,
-        );
         break;
       }
       case "power_policy_config":
@@ -651,7 +662,6 @@ export function useWebSocket() {
           { status: ok ? "success" : "failed", completedAt: Date.now(), fromVersion, toVersion },
           action,
         );
-        robotStore.addLog("info", "Software", `${pkg} → ${status}`);
         // already_latest 特殊提示
         if (status === "already_latest") {
           appStore.showToast(`${pkg} 已是最新版本`, "info");
@@ -666,7 +676,6 @@ export function useWebSocket() {
           typeof data.pan === "number" ? data.pan : 90,
           typeof data.tilt === "number" ? data.tilt : 90,
         );
-        robotStore.addLog("info", "Gimbal", `云台 pan=${data.pan}° tilt=${data.tilt}°`);
         break;
       case "gimbal_limit":
         robotStore.setGimbal(
@@ -676,7 +685,6 @@ export function useWebSocket() {
         const limitAxis = (data.limit_axis || data.axis || "pan") === "pan" ? "水平" : "俯仰";
         const limitDir = (data.limit || "min") === "max" ? "最大" : "最小";
         appStore.showToast(`云台${limitAxis}已到达${limitDir}限位`, "info");
-        robotStore.addLog("warn", "Gimbal", `限位: ${limitAxis} ${limitDir}`);
         break;
       case "camera_status": {
         if (Array.isArray((data as Record<string, unknown>).cameras)) {
@@ -720,13 +728,11 @@ export function useWebSocket() {
         if (updates.length > 0) {
           const names = updates.map((u: any) => u.display_name || u.name).join("、");
           appStore.showToast(`发现 ${updates.length} 个可更新软件：${names}，请到软件管理页面升级`, "info");
-          robotStore.addLog("info", "Software", `发现 ${updates.length} 个可更新软件：${names}`);
         }
         break;
       }
       case "error":
         console.warn(`[Signaling:error] ${String(data.message ?? "未知错误")}`);
-        robotStore.addLog("error", "Signaling", String(data.message ?? ""));
         // 503 表示可选服务不可用（如摄像头/Rosmaster），不弹 Toast
         if (String(data.code ?? "") !== "503") {
           appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error");
@@ -748,16 +754,13 @@ export function useWebSocket() {
         const wifiStatus = String(data.status ?? "");
         if (wifiStatus === "connected") {
           appStore.showToast(`已连接到 ${data.ssid}`, "success");
-          robotStore.addLog("info", "WiFi", `已连接到 ${data.ssid}`);
         } else {
           appStore.showToast(`WiFi 连接失败: ${data.ssid}`, "error");
-          robotStore.addLog("error", "WiFi", `连接 ${data.ssid} 失败: ${data.error || data.output || ""}`);
         }
         break;
       }
       case "wifi_disconnect_result":
         appStore.showToast("WiFi 已断开", "info");
-        robotStore.addLog("info", "WiFi", "WiFi 已断开");
         break;
 
       // ---- 音乐播放 ----
@@ -904,6 +907,16 @@ export function useWebSocket() {
   function sendMusicCommand(cmd: string, params: Record<string, unknown> = {}): void {
     _send({ type: cmd, data: params });
   }
+  function requestLogs(params: {
+    mode?: "tail" | "since" | "before";
+    sinceLine?: number;
+    beforeLine?: number;
+    limit?: number;
+    level?: string;
+  }): void {
+    const { mode = "tail", sinceLine = 0, beforeLine = 0, limit = 200, level = "" } = params;
+    _send({ type: "logs", data: { mode, since_line: sinceLine, before_line: beforeLine, limit, level } }, true);
+  }
 
   function cleanup(): void {
     disconnect();
@@ -980,5 +993,6 @@ export function useWebSocket() {
     sendServiceStatus,
     sendServiceControl,
     sendMusicCommand,
+    requestLogs,
   };
 }

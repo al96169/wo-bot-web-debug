@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
-import type { DanceInfo, MusicStatus, MusicTrack, ServiceInfo, SoftwareTask } from "../types";
+import type { DanceInfo, LogEntry, MusicStatus, MusicTrack, ServiceInfo, SoftwareTask } from "../types";
 import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime } from "./useWebSocket";
 
 /* ============================================================
@@ -158,7 +158,6 @@ export function useWebRTC() {
     _mediaRetryCount++;
     _videoPlaying = false;
     console.log(`[WebRTC:Media] 第 ${_mediaRetryCount}/${MAX_MEDIA_RETRY} 次重试`);
-    robotStore.addLog("warn", "WebRTC", `未收到视频流，第 ${_mediaRetryCount} 次重试...`);
     resetAndOffer();
   }
 
@@ -194,7 +193,6 @@ export function useWebRTC() {
         webrtcState.value = "connected";
         _startMediaTimeout();
         appStore.setSSHConnected(true);
-        robotStore.addLog("warn", "WebRTC", "ICE gathering 完成兜底: 强制标记为已连接");
       }
     }, 8000); // 8s after gathering complete
   }
@@ -223,7 +221,6 @@ export function useWebRTC() {
     const features = getRemoteFeatures();
     console.log("[WebRTC] features:", features);
     if (!features.includes("webrtc")) {
-      robotStore.addLog("info", "WebRTC", "服务端不支持 WebRTC，使用 WebSocket 降级模式");
       webrtcState.value = "idle";
       done();
       return;
@@ -244,13 +241,11 @@ export function useWebRTC() {
 
     const ws = getSignalingWs();
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      robotStore.addLog("warn", "WebRTC", "信令通道未就绪，无法建立 WebRTC");
       done();
       return;
     }
 
     webrtcState.value = "connecting";
-    robotStore.addLog("info", "WebRTC", "正在建立 WebRTC 连接...");
 
     try {
       const peerConnection = new RTCPeerConnection({
@@ -267,7 +262,6 @@ export function useWebRTC() {
           console.log("[WebRTC] Remote DC opened, using as fallback");
           dcReadyState.value = "open";
           dcEverOpened.value = true;
-          robotStore.addLog("info", "WebRTC", "DataChannel 已建立 — 业务通道就绪");
           webrtcState.value = "connected";
           _startMediaTimeout();
           appStore.setSSHConnected(true);
@@ -304,7 +298,6 @@ export function useWebRTC() {
         console.log("[WebRTC] DataChannel opened!");
         dcReadyState.value = "open";
         dcEverOpened.value = true;
-        robotStore.addLog("info", "WebRTC", "DataChannel 已建立 — 业务通道就绪");
         webrtcState.value = "connected";
         _startMediaTimeout();
         appStore.setSSHConnected(true);
@@ -317,7 +310,7 @@ export function useWebRTC() {
           const msg = JSON.parse(event.data as string);
           dispatchDataChannelMessage(msg);
         } catch {
-          robotStore.addLog("warn", "WebRTC", "DataChannel 收到非 JSON 消息");
+          /* 非 JSON 消息忽略 */
         }
       };
 
@@ -325,7 +318,6 @@ export function useWebRTC() {
         // 防止旧 DC 的 onclose 异步触发后覆盖新 DC 状态
         if (dc.value !== channel) return;
         dcReadyState.value = "closed";
-        robotStore.addLog("warn", "WebRTC", "DataChannel 已关闭");
         webrtcState.value = "idle";
         appStore.setSSHConnected(false);
         setDataChannel(null);
@@ -335,7 +327,6 @@ export function useWebRTC() {
         if (dc.value !== channel) return;
         const err = (event as RTCErrorEvent).error;
         const detail = err ? `${err.message ?? err.errorDetail ?? "unknown"}` : "无详情";
-        robotStore.addLog("error", "WebRTC", `DataChannel 错误: ${detail}`);
         console.error(`[WebRTC:DataChannel] 错误: ${detail}`);
       };
 
@@ -377,11 +368,9 @@ export function useWebRTC() {
         // 监听 track 状态变化（mute/ended 是画面冻结的关键信号）
         event.track.onmute = () => {
           console.warn("[WebRTC:Track] track muted:", event.track.id, "readyState:", event.track.readyState);
-          robotStore.addLog("warn", "WebRTC", `视频轨静音: ${event.track.id}`);
         };
         event.track.onunmute = () => {
           console.log("[WebRTC:Track] track unmuted:", event.track.id, "readyState:", event.track.readyState);
-          robotStore.addLog("info", "WebRTC", `视频轨恢复: ${event.track.id}`);
           // 仅视频轨开始接收数据时标记为播放中
           if (event.track.kind === "video") {
             _videoPlaying = true;
@@ -399,15 +388,12 @@ export function useWebRTC() {
         };
         event.track.onended = () => {
           console.warn("[WebRTC:Track] track ended:", event.track.id);
-          robotStore.addLog("warn", "WebRTC", `视频轨结束: ${event.track.id}`);
         };
 
         if (_ontrackCount === 1) {
           videoStream0.value = resolvedStream;
-          robotStore.addLog("info", "WebRTC", "收到摄像头 0 视频流");
         } else {
           videoStream1.value = resolvedStream;
-          robotStore.addLog("info", "WebRTC", "收到摄像头 1 视频流");
         }
 
         // 注意：不清除媒体超时，等待 onunmute 确认视频轨正在接收数据
@@ -450,7 +436,6 @@ export function useWebRTC() {
           "signalingState:",
           peerConnection.signalingState,
         );
-        robotStore.addLog("info", "WebRTC", `ICE状态: ${iceState}`);
         if (iceState === "connected" || iceState === "completed") {
           console.log("[WebRTC:ICE] ICE 已连接, 等待 DTLS/DataChannel");
           _clearGatheringFallback();
@@ -488,7 +473,6 @@ export function useWebRTC() {
           "signalingState:",
           peerConnection.signalingState,
         );
-        robotStore.addLog("info", "WebRTC", `连接状态: ${state}`);
         if (state === "connected") {
           _clearGatheringFallback();
           webrtcState.value = "connected";
@@ -526,7 +510,6 @@ export function useWebRTC() {
 
       if (!answer) {
         console.log("[WebRTC] answer timed out or rejected");
-        robotStore.addLog("error", "WebRTC", "等待 SDP answer 超时");
         webrtcState.value = "failed";
         return;
       }
@@ -552,9 +535,7 @@ export function useWebRTC() {
         "iceState:",
         peerConnection.iceConnectionState,
       );
-      robotStore.addLog("info", "WebRTC", "WebRTC 连接建立完成");
     } catch (e) {
-      robotStore.addLog("error", "WebRTC", `WebRTC 连接失败: ${e}`);
       webrtcState.value = "failed";
     } finally {
       _establishing = false;
@@ -616,14 +597,41 @@ export function useWebRTC() {
         refreshHeartbeatPongTime(); // 防御性：同步更新 WS 心跳时间戳，防止误判超时
         break;
       case "logs": {
-        const logs = Array.isArray(data.logs) ? (data.logs as Array<Record<string, unknown>>) : [];
-        for (const l of logs) {
-          const level = (["debug", "info", "warn", "error"].includes(String(l.level)) ? l.level : "info") as
-            | "debug"
-            | "info"
-            | "warn"
-            | "error";
-          robotStore.addLog(level, String(l.source ?? "remote"), String(l.message ?? ""));
+        const rawLogs = Array.isArray(data.logs) ? (data.logs as Array<Record<string, unknown>>) : [];
+        const totalLines = Number(data.total_lines ?? 0);
+        const hasNextSince = data.next_since !== undefined;
+        const nextSince = Number(data.next_since ?? 0);
+        const hasMore = Boolean(data.has_more);
+        const mode = String(data.mode ?? "tail");
+        const mapped: LogEntry[] = rawLogs.map((l) => {
+          const rawLevel = String(l.level ?? "info").toLowerCase();
+          const level = (rawLevel === "warning"
+            ? "warn"
+            : ["debug", "info", "warn", "error"].includes(rawLevel)
+              ? rawLevel
+              : "info") as LogEntry["level"];
+          const timestamp = String(l.timestamp ?? l.time ?? "");
+          const lineNo = Number(l.line_no ?? 0);
+          return {
+            id: `ln-${lineNo}`,
+            lineNo,
+            time: timestamp,
+            level,
+            source: String(l.source ?? "remote"),
+            message: String(l.message ?? ""),
+          };
+        });
+        const meta = { totalLines, nextSince, hasMore };
+        if (mode === "since") {
+          robotStore.appendLogs(mapped, hasNextSince ? meta : undefined);
+        } else if (mode === "before") {
+          robotStore.prependLogs(mapped);
+          if (hasNextSince) {
+            robotStore.logTotalLines = totalLines;
+            robotStore.logHasMore = hasMore;
+          }
+        } else {
+          robotStore.setLogs(mapped, hasNextSince ? meta : undefined);
         }
         break;
       }
@@ -678,7 +686,6 @@ export function useWebRTC() {
         if (updates.length > 0) {
           const names = updates.map((u: any) => u.display_name || u.name).join("、");
           appStore.showToast(`发现 ${updates.length} 个可更新软件：${names}，请到软件管理页面升级`, "info");
-          robotStore.addLog("info", "Software", `发现 ${updates.length} 个可更新软件：${names}`);
         }
         break;
       }
@@ -698,7 +705,6 @@ export function useWebRTC() {
           { status: ok ? "success" : "failed", completedAt: Date.now(), fromVersion, toVersion },
           action,
         );
-        robotStore.addLog("info", "Software", `${pkg} → ${status}`);
         // already_latest 特殊提示
         if (status === "already_latest") {
           appStore.showToast(`${pkg} 已是最新版本`, "info");
@@ -716,7 +722,6 @@ export function useWebRTC() {
         break;
       }
       case "module_control_ack":
-        robotStore.addLog("info", "Module", `${data.module_id} → ${data.action} (${data.status})`);
         break;
       case "motion_ack":
         robotStore.addCmdLog({
@@ -736,7 +741,6 @@ export function useWebRTC() {
         appStore.showToast("急停已触发", "error");
         break;
       case "device_control_ack":
-        robotStore.addLog("info", "Device", `${data.action} → ${data.enabled ? "ON" : "OFF"}`);
         break;
       case "power_policy_status":
         robotStore.setPowerPolicy({
@@ -745,11 +749,6 @@ export function useWebRTC() {
           manual_override: Boolean(data.manual_override),
           simulated_battery: data.simulated_battery != null ? Number(data.simulated_battery) : null,
         });
-        robotStore.addLog(
-          "info",
-          "PowerPolicy",
-          `模式: ${data.mode === "eco" ? "省电" : "正常"}, 阀值: ${data.threshold}%`,
-        );
         break;
       case "power_policy_config":
         robotStore.setPowerPolicy({
@@ -760,7 +759,6 @@ export function useWebRTC() {
         });
         break;
       case "system_ack":
-        robotStore.addLog("info", "System", `${data.action} → ${data.status}`);
         break;
       case "camera_status": {
         if (Array.isArray((data as Record<string, unknown>).cameras)) {
@@ -786,7 +784,6 @@ export function useWebRTC() {
       }
       case "error":
         console.warn(`[Remote:error] ${String(data.message ?? "未知错误")}`);
-        robotStore.addLog("error", "Remote", String(data.message ?? ""));
         // 503 表示可选服务不可用，不弹 Toast
         if (String(data.code ?? "") !== "503") {
           appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error");
@@ -845,7 +842,6 @@ export function useWebRTC() {
         break;
       }
       case "service_control_ack": {
-        robotStore.addLog("info", "Service", `${data.service_id} → ${data.action} (${data.status})`);
         if (Array.isArray(data.services) && data.services.length > 0) {
           robotStore.setServices(data.services as ServiceInfo[]);
         }
@@ -884,7 +880,6 @@ export function useWebRTC() {
       }
       default:
         console.log("[DC.msg] unhandled:", msgType, JSON.stringify(data).slice(0, 200));
-        robotStore.addLog("debug", "DataChannel", `收到消息: ${msg.type}`);
         break;
     }
   }
@@ -921,7 +916,6 @@ export function useWebRTC() {
     gatheringCompleted.value = false;
     localCandidates.value = [];
     remoteCandidates.value = [];
-    robotStore.addLog("info", "WebRTC", "WebRTC 连接已关闭");
   }
 
   /** 重置并重新发起 WebRTC 连接（关闭当前 PC 后重新 createOffer） */
@@ -944,6 +938,28 @@ export function useWebRTC() {
     }
   }
 
+  function requestLogs(params: {
+    mode?: "tail" | "since" | "before";
+    sinceLine?: number;
+    beforeLine?: number;
+    limit?: number;
+    level?: string;
+  }): void {
+    const { mode = "tail", sinceLine = 0, beforeLine = 0, limit = 200, level = "" } = params;
+    const payload = JSON.stringify({
+      type: "logs",
+      data: { mode, since_line: sinceLine, before_line: beforeLine, limit, level },
+    });
+    if (dc.value && dc.value.readyState === "open") {
+      dc.value.send(payload);
+    } else {
+      const ws = getSignalingWs();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(payload);
+      }
+    }
+  }
+
   return {
     pc,
     dc,
@@ -963,5 +979,6 @@ export function useWebRTC() {
     close,
     reconnect,
     resetAndOffer,
+    requestLogs,
   };
 }

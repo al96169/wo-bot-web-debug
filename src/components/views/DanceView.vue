@@ -29,8 +29,6 @@ onMessage((msg: { type: string; data?: any }) => {
 // ----- 播放控制 -----
 function play(danceId: string) {
   send({ type: "dance", data: { command: "play", dance_id: danceId, loop: loopEnabled.value } });
-  const name = dances.value.find((d) => d.id === danceId)?.name ?? danceId;
-  robotStore.addLog("info", "舞蹈", `开始播放: ${name}${loopEnabled.value ? " (循环)" : ""}`);
 }
 
 function togglePlay() {

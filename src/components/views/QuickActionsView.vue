@@ -48,7 +48,6 @@ function handleFind() {
       type: "find",
       data: "find_device → OFF",
     });
-    robotStore.addLog("info", "QuickAction", "寻找设备: 停止");
     sendDeviceControl("find_device", false);
   } else {
     // 空闲 → 开始寻找
@@ -60,7 +59,6 @@ function handleFind() {
       type: "find",
       data: "find_device → ON",
     });
-    robotStore.addLog("info", "QuickAction", "寻找设备: 开始");
     sendDeviceControl("find_device", true);
   }
 }
@@ -111,13 +109,11 @@ function handleAction(action: string, cmdType: string) {
       type: cmdType,
       data: `${action} → ${next ? "ON" : "OFF"}`,
     });
-    robotStore.addLog("info", "QuickAction", `${action}: ${next ? "开" : "关"}`);
     sendDeviceControl(action, next);
     return;
   }
   if (action === "emergency") {
     robotStore.addCmdLog({ time: textTime(), direction: "send", type: "emergency", data: "急停触发" });
-    robotStore.addLog("warn", "QuickAction", "急停已触发");
     sendEmergencyStop();
     return;
   }
@@ -127,7 +123,6 @@ function handleControlModeChange(e: Event) {
   const target = e.target as HTMLSelectElement;
   appStore.controlMode = target.value as "manual" | "semi" | "auto";
   robotStore.addCmdLog({ time: textTime(), direction: "send", type: "mode", data: `控制模式 → ${target.value}` });
-  robotStore.addLog("info", "QuickAction", `控制模式切换: ${target.value}`);
   appStore.saveSettings();
 }
 
@@ -145,7 +140,6 @@ function handleVolumeChange(e: Event) {
   if (volTimer) clearTimeout(volTimer);
   volTimer = setTimeout(() => {
     robotStore.addCmdLog({ time: textTime(), direction: "send", type: "volume", data: `音量 → ${val}%` });
-    robotStore.addLog("info", "QuickAction", `音量调节: ${val}%`);
     sendMusicCommand("music_volume", { volume: val });
   }, 300);
 }

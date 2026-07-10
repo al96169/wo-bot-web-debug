@@ -2,7 +2,7 @@ import { ref, type Ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
 import { useRobotStore } from "../stores/robot";
-import type { Module, Message, Software, Device, LogEntry } from "../types";
+import type { Module, Message, Software, Device } from "../types";
 
 /* ============================================================
  * wo-bot-vue - Mock 模式组合式函数
@@ -65,13 +65,11 @@ export function useMock() {
   const mockDisk = ref(33);
 
   // 计数器
-  let logCounter = 0;
   let discoveryCounter = 0;
 
   // 定时器句柄
   let statusTimer: ReturnType<typeof setInterval> | null = null;
   let discoveryTimer: ReturnType<typeof setInterval> | null = null;
-  let logTimer: ReturnType<typeof setInterval> | null = null;
 
   /* ---- 启动 Mock ---- */
 
@@ -128,13 +126,9 @@ export function useMock() {
       hostname: "wobot-mock",
     });
 
-    // 日志
-    robotStore.addLog("info", "Mock", "Mock 模式已启动");
-
     // 启动定时器
     startStatusTimer();
     startDiscoveryTimer();
-    startLogTimer();
 
     // 2 阶段连接：先 connecting，800ms 后 connected
     appStore.connection = "connecting";
@@ -169,10 +163,6 @@ export function useMock() {
       clearInterval(discoveryTimer);
       discoveryTimer = null;
     }
-    if (logTimer) {
-      clearInterval(logTimer);
-      logTimer = null;
-    }
 
     // 清理数据
     devicesStore.currentDevice = null;
@@ -191,8 +181,6 @@ export function useMock() {
 
     robotStore.setSubsystemStatus([]);
     robotStore.setDeviceDetails([]);
-    robotStore.clearLogs();
-    robotStore.addLog("info", "Mock", "Mock 模式已停止");
   }
 
   /* ---- Mock 生成函数 ---- */
@@ -354,26 +342,6 @@ export function useMock() {
         appStore.scanning = false;
       }
     }, 4000);
-  }
-
-  function startLogTimer(): void {
-    const levels: LogEntry["level"][] = ["debug", "info", "info", "info", "warn", "error"];
-    const sources = ["nav-engine", "vision", "lidar", "motor", "imu", "system"];
-    const messages = [
-      "位姿更新完成",
-      "点云处理完成，共 12800 点",
-      "路径规划重新计算中",
-      "电机 PID 参数已调整",
-      "IMU 校准偏移超出阈值",
-      "温度传感器读数异常，已触发降频",
-    ];
-    logTimer = setInterval(() => {
-      logCounter++;
-      const level = levels[logCounter % levels.length];
-      const source = sources[logCounter % sources.length];
-      const msg = messages[logCounter % messages.length];
-      robotStore.addLog(level, source, `[mock] ${msg} (seq=${logCounter})`);
-    }, 2500);
   }
 
   return {

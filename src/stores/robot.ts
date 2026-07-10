@@ -20,11 +20,6 @@ type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
 };
 
-function formatTime(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
 export interface CmdLogEntry {
   time: string;
   direction: string;
@@ -88,6 +83,14 @@ export const useRobotStore = defineStore("robot", {
 
     /** 日志 */
     logs: [] as LogEntry[],
+    /** 日志增量同步游标：已收到的最大行号+1（下次 since 请求的起始行） */
+    logCursor: 0,
+    /** 服务端日志文件总行数（最近一次响应） */
+    logTotalLines: 0,
+    /** 是否还有更多历史日志可向上加载 */
+    logHasMore: false,
+    /** 日志面板是否已清空（清空后只接收清空点之后的新日志） */
+    logCleared: false,
 
     /** 控制指令日志 */
     cmdLogs: [] as CmdLogEntry[],
@@ -208,19 +211,61 @@ export const useRobotStore = defineStore("robot", {
   actions: {
     /* ---- 日志 ---- */
 
-    addLog(level: LogEntry["level"], source: string, message: string): void {
-      this.logs.push({
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        time: formatTime(new Date()),
-        level,
-        source,
-        message,
-      });
-      if (this.logs.length > 1000) this.logs = this.logs.slice(-1000);
+    addLog() {},
+
+    /** 替换整个日志数组（tail 模式：首次加载最新 N 条） */
+    setLogs(logs: LogEntry[], meta?: { totalLines: number; nextSince: number }): void {
+      this.logs = logs;
+      if (meta) {
+        this.logTotalLines = meta.totalLines;
+        this.logCursor = meta.nextSince;
+        this.logHasMore = logs.length > 0 && logs[0].lineNo > 0;
+        this.logCleared = false;
+      }
+    },
+
+    /** 追加新日志到末尾（since 模式：增量同步） */
+    appendLogs(logs: LogEntry[], meta?: { totalLines: number; nextSince: number; hasMore: boolean }): void {
+      if (logs.length === 0) {
+        if (meta) {
+          this.logTotalLines = meta.totalLines;
+          // 没有新日志但 cursor 仍需同步
+          if (meta.nextSince > this.logCursor) {
+            this.logCursor = meta.nextSince;
+          }
+        }
+        return;
+      }
+      // 去重：过滤掉已存在的 lineNo
+      const existingMax = this.logs.length > 0 ? this.logs[this.logs.length - 1].lineNo : -1;
+      const newLogs = logs.filter((l) => l.lineNo > existingMax);
+      if (newLogs.length > 0) {
+        this.logs.push(...newLogs);
+      }
+      if (meta) {
+        this.logTotalLines = meta.totalLines;
+        this.logCursor = meta.nextSince;
+      }
+    },
+
+    /** 向前插入历史日志（向上加载更多） */
+    prependLogs(logs: LogEntry[]): void {
+      if (logs.length === 0) return;
+      // 去重：过滤掉已存在的 lineNo
+      const existingMin = this.logs.length > 0 ? this.logs[0].lineNo : Number.MAX_SAFE_INTEGER;
+      const oldLogs = logs.filter((l) => l.lineNo < existingMin);
+      if (oldLogs.length > 0) {
+        this.logs.unshift(...oldLogs);
+      }
+      // hasMore 由调用方（case "logs"）从后端响应设置
     },
 
     clearLogs(): void {
       this.logs = [];
+      this.logCleared = true;
+      // 清空后游标设为当前服务端总行数，下次 since 只拉清空后的新日志
+      this.logCursor = this.logTotalLines;
+      this.logHasMore = false;
     },
 
     /** 导出日志为文本 */

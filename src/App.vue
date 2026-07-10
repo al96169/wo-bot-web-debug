@@ -248,7 +248,6 @@ function connectDirectly(device: Device) {
     console.error("[App] connectDirectly 异常:", errMsg);
     appStore.connection = "error";
     appStore.showToast(`无法连接到 ${device.name}`, "error");
-    robotStore.addLog("error", "连接", `连接失败: ${device.name} - ${errMsg}`);
     connectTimeout.value = { message: `无法连接到 ${device.name}，请检查设备是否在线。` };
   }
 }
@@ -321,14 +320,12 @@ function handleDisconnect() {
   appStore.connection = "disconnected";
   appStore.setSSHConnected(false);
   appStore.showToast("连接已断开", "info");
-  robotStore.addLog("info", "连接", "主动断开连接");
 }
 
 function handleOpsConfirm() {
   if (!opsConfirm.value) return;
   const type = opsConfirm.value.type;
   if (type === "forget" && devicesStore.currentDevice) {
-    robotStore.addLog("info", "设备", `忘记设备: ${devicesStore.currentDevice.name}`);
     devicesStore.removeDevice(devicesStore.currentDevice.id);
     devicesStore.setCurrentDevice(null);
     disconnect();
@@ -340,7 +337,6 @@ function handleOpsConfirm() {
       type: "reboot",
       data: "重启指令",
     });
-    robotStore.addLog("info", "设备", "发送重启指令");
     sendSystemAction("reboot");
     disconnect();
   }
@@ -351,7 +347,6 @@ function handleOpsConfirm() {
       type: "shutdown",
       data: "关机指令",
     });
-    robotStore.addLog("info", "设备", "发送关机指令");
     sendSystemAction("shutdown");
     disconnect();
   }
@@ -362,7 +357,6 @@ function handleOpsConfirm() {
       type: "restart_service",
       data: "重启主服务",
     });
-    robotStore.addLog("info", "设备", "发送主服务重启指令");
     sendSystemAction("restart_service");
     disconnect();
   }

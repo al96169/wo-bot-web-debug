@@ -55,7 +55,6 @@ function startTask(sw: Software, action: SoftwareTask["action"]): void {
     fromVersion: sw.version || undefined,
   };
   robotStore.addSoftwareTask(task);
-  robotStore.addLog("info", "Software", `${action} ${sw.name}`);
   robotStore.addCmdLog({
     time: new Date().toLocaleTimeString(),
     direction: "send",

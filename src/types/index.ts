@@ -98,6 +98,7 @@ export interface SoftwareTask {
 
 export interface LogEntry {
   id: string;
+  lineNo: number;
   time: string;
   level: "debug" | "info" | "warn" | "error";
   source: string;

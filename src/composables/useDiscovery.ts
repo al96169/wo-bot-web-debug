@@ -1,7 +1,6 @@
 import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
-import { useRobotStore } from "../stores/robot";
 
 /* ============================================================
  * wo-bot-web-debug - 设备发现
@@ -27,7 +26,6 @@ interface MDnsDevice {
 export function useDiscovery() {
   const appStore = useAppStore();
   const devicesStore = useDevicesStore();
-  const robotStore = useRobotStore();
 
   const scanning = ref(false);
 
@@ -83,8 +81,6 @@ export function useDiscovery() {
     appStore.scanning = true;
     devicesStore.clearDiscovered();
 
-    robotStore.addLog("info", "Discovery", "开始扫描局域网设备...");
-
     // 并行：mDNS 发现 + 本地快速探活
     const mdnsPromise = callMdnsApi(2500);
 
@@ -121,9 +117,7 @@ export function useDiscovery() {
       combined.set(r.ip + ":" + WS_PORT, { name: r.name, ip: r.ip, port: WS_PORT });
     }
 
-    let found = 0;
     for (const device of combined.values()) {
-      found++;
       devicesStore.addDiscovered({
         id: `lan-${device.ip.replace(/\./g, "-")}-${device.port}`,
         name: device.name,
@@ -133,11 +127,6 @@ export function useDiscovery() {
       });
     }
 
-    robotStore.addLog(
-      "info",
-      "Discovery",
-      `扫描完成: 发现 ${found} 个设备（mDNS: ${mdnsDevices.length}, 探测: ${localResults.filter((x) => x).length}）`,
-    );
     scanning.value = false;
     appStore.scanning = false;
   }
