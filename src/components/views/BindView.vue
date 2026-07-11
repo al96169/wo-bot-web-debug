@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed, nextTick } from "vue";
+import QRCode from "qrcode";
 import {
   useWebSocket,
   getClientId,
@@ -13,14 +14,14 @@ import type { BindingMethod, AuthRequiredData } from "@/types";
 import { useDevicesStore } from "@/stores/devices";
 
 const devicesStore = useDevicesStore();
-const { sendBindRequest, sendBindVerify, sendBindReplay, sendBindStartScan, sendBindCancel, sendBindShareUse } = useWebSocket();
+const { sendBindRequest, sendBindVerify, sendBindReplay, sendBindStartScan, sendBindCancel, sendBindShareUse, sendBindPassword } = useWebSocket();
 
 const props = defineProps<{
   authData: AuthRequiredData | null;
 }>();
 
 // ---- 状态 ----
-const step = ref<"select" | "display" | "tts" | "qr_scan" | "gimbal" | "share_code" | "success" | "failed">("select");
+const step = ref<"select" | "display" | "tts" | "qr_scan" | "gimbal" | "password" | "share_code" | "success" | "failed">("select");
 const requestToken = ref("");
 const errorMessage = ref("");
 const attempts = ref(0);
@@ -32,6 +33,8 @@ const gimbalSequenceLength = 4;
 const gimbalInputs = ref<string[]>([]);
 // 分享码输入
 const shareCodeInput = ref("");
+// 密码输入
+const passwordInput = ref("");
 
 // ---- 方式选择 ----
 const methodLabels: Record<BindingMethod, string> = {
@@ -39,6 +42,7 @@ const methodLabels: Record<BindingMethod, string> = {
   qr_scan: "二维码扫描",
   tts: "语音播报",
   gimbal: "云台动作",
+  password: "密码绑定",
   share_code: "输入绑定码",
 };
 
@@ -47,6 +51,7 @@ const methodIcons: Record<BindingMethod, string> = {
   qr_scan: "📷",
   tts: "🔊",
   gimbal: "🎮",
+  password: "🔑",
   share_code: "🔗",
 };
 
@@ -55,12 +60,15 @@ const methodDescriptions: Record<BindingMethod, string> = {
   qr_scan: "机器人的摄像头将扫描你屏幕上的二维码",
   tts: "机器人将通过语音播报 4 位数字，请在此输入",
   gimbal: "观察云台转动方向，依次点击对应方向按钮",
+  password: "输入机器人密码完成绑定",
   share_code: "输入从其他设备获取的 6 位分享码直接绑定",
 };
 
-/** 服务端可用方式 + 始终可用的分享码方式 */
+/** 服务端可用方式 + 始终可用的分享码方式（qr_scan 已禁用，不展示） */
 const availableMethodList = computed<BindingMethod[]>(() => {
-  const serverMethods = props.authData?.methods || availableMethods.value;
+  const serverMethods = (props.authData?.methods || availableMethods.value).filter(
+    (m) => m !== "qr_scan"
+  );
   if (serverMethods.includes("share_code" as BindingMethod)) return serverMethods;
   return [...serverMethods, "share_code"];
 });
@@ -84,6 +92,11 @@ function selectMethod(method: BindingMethod) {
 
   sendBindRequest(requestToken.value, method);
   step.value = method;
+
+  // QR 扫描方式：进入后自动生成二维码
+  if (method === "qr_scan") {
+    nextTick(() => generateQrCode());
+  }
 }
 
 // ---- 分享码提交 ----
@@ -91,6 +104,13 @@ function submitShareCode() {
   if (!shareCodeInput.value || isSubmitting.value) return;
   isSubmitting.value = true;
   sendBindShareUse(shareCodeInput.value.trim().toUpperCase());
+}
+
+// ---- 密码提交 ----
+function submitPassword() {
+  if (!passwordInput.value || !requestToken.value || isSubmitting.value) return;
+  isSubmitting.value = true;
+  sendBindPassword(requestToken.value, passwordInput.value);
 }
 
 // ---- 回调注册 ----
@@ -150,20 +170,28 @@ function startScan() {
   sendBindStartScan(requestToken.value);
 }
 
-// ---- QR 码数据生成 ----
-function getQrData(): string {
+// ---- QR 码生成（本地，不依赖外部 API） ----
+// QR 内容格式：wobot:bind|<deviceId>|<requestToken>|<clientId>
+// 简短格式降低二维码密度，提高扫描成功率
+const qrDataUrl = ref("");
+
+function buildQrPayload(): string {
   const robotId = devicesStore.robotInfo?.robot_id || "";
-  return JSON.stringify({
-    deviceId: robotId,
-    requestToken: requestToken.value,
-    clientId: getClientId(),
-    clientName: getClientName(),
-  });
+  return `wobot:bind|${robotId}|${requestToken.value}|${getClientId()}`;
 }
 
-function getQrUrl(): string {
-  const data = encodeURIComponent(getQrData());
-  return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${data}`;
+async function generateQrCode() {
+  try {
+    const payload = buildQrPayload();
+    qrDataUrl.value = await QRCode.toDataURL(payload, {
+      width: 300,
+      margin: 2,
+      errorCorrectionLevel: "M",
+    });
+  } catch (e) {
+    console.error("[BindView] QR generation failed:", e);
+    qrDataUrl.value = "";
+  }
 }
 
 // ---- 返回/取消（发送 bind_cancel 停止后端任务） ----
@@ -176,6 +204,7 @@ function backToSelect() {
   randomCode.value = "";
   gimbalInputs.value = [];
   shareCodeInput.value = "";
+  passwordInput.value = "";
   scanStarted.value = false;
   isSubmitting.value = false;
 }
@@ -254,7 +283,8 @@ onUnmounted(() => {
       <h2>二维码扫描认证</h2>
       <p class="hint">将下方二维码对准机器人摄像头</p>
       <div class="qr-container">
-        <img :src="getQrUrl()" alt="QR Code" class="qr-image" />
+        <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR Code" class="qr-image" />
+        <div v-else class="qr-placeholder">生成二维码中...</div>
       </div>
       <div v-if="!scanStarted" class="btn-group">
         <button class="btn-primary" @click="startScan">开始扫描</button>
@@ -318,6 +348,25 @@ onUnmounted(() => {
       <div class="btn-group">
         <button class="btn-primary" :disabled="shareCodeInput.length !== 6 || isSubmitting" @click="submitShareCode">
           {{ isSubmitting ? '绑定中...' : '确认绑定' }}
+        </button>
+        <button class="btn-back" @click="backToSelect" :disabled="isSubmitting">返回</button>
+      </div>
+    </div>
+
+    <!-- 密码绑定方式 -->
+    <div v-else-if="step === 'password'" class="method-step">
+      <h2>密码绑定</h2>
+      <p class="hint">请输入机器人密码完成绑定</p>
+      <input
+        v-model="passwordInput"
+        class="code-input password-input"
+        type="password"
+        placeholder="输入密码"
+        @keyup.enter="submitPassword"
+      />
+      <div class="btn-group">
+        <button class="btn-primary" :disabled="!passwordInput || isSubmitting" @click="submitPassword">
+          {{ isSubmitting ? '验证中...' : '确认' }}
         </button>
         <button class="btn-back" @click="backToSelect" :disabled="isSubmitting">返回</button>
       </div>
@@ -448,6 +497,12 @@ h2 {
   font-size: 20px;
 }
 
+.password-input {
+  letter-spacing: 2px;
+  font-size: 18px;
+  width: 240px;
+}
+
 .btn-primary {
   padding: 10px 32px;
   background: var(--accent);
@@ -521,6 +576,16 @@ h2 {
   display: block;
   width: 240px;
   height: 240px;
+}
+
+.qr-placeholder {
+  width: 240px;
+  height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 14px;
 }
 
 .scan-waiting {

@@ -4,6 +4,8 @@ import {
   useWebSocket,
   getClientId,
   setOnBindShareCreated,
+  setOnBindPasswordConfig,
+  setOnBindPasswordUpdate,
   getConnectedEndpoint,
 } from "@/composables/useWebSocket";
 import { useRobotStore } from "@/stores/robot";
@@ -13,7 +15,7 @@ import { useAppStore } from "@/stores/app";
 const robotStore = useRobotStore();
 const devicesStore = useDevicesStore();
 const appStore = useAppStore();
-const { requestBindList, sendBindRemove, sendBindShareCreate } = useWebSocket();
+const { requestBindList, sendBindRemove, sendBindShareCreate, sendBindPasswordConfig, sendBindPasswordUpdate } = useWebSocket();
 
 const removeTarget = ref<string | null>(null);
 const currentClientId = getClientId();
@@ -81,6 +83,64 @@ function copyShareLink() {
   });
 }
 
+// ---- 密码绑定配置 ----
+const passwordEnabled = ref(false);
+const passwordHasPassword = ref(false);
+const showPasswordForm = ref(false);
+const newPassword = ref("");
+const confirmPassword = ref("");
+const passwordUpdating = ref(false);
+const showNewPassword = ref(false);
+const showConfirmPassword = ref(false);
+
+setOnBindPasswordConfig((enabled, hasPassword) => {
+  passwordEnabled.value = enabled;
+  passwordHasPassword.value = hasPassword;
+});
+
+setOnBindPasswordUpdate((success, error) => {
+  passwordUpdating.value = false;
+  if (success) {
+    appStore.showToast("密码配置已更新", "success");
+    showPasswordForm.value = false;
+    newPassword.value = "";
+    confirmPassword.value = "";
+    sendBindPasswordConfig();
+  } else {
+    appStore.showToast(error || "更新失败", "error");
+  }
+});
+
+function togglePasswordEnabled() {
+  passwordUpdating.value = true;
+  sendBindPasswordUpdate({ enabled: !passwordEnabled.value });
+}
+
+function savePassword() {
+  if (newPassword.value !== confirmPassword.value) {
+    appStore.showToast("两次密码不一致", "error");
+    return;
+  }
+  if (newPassword.value.length < 6) {
+    appStore.showToast("密码至少 6 位", "error");
+    return;
+  }
+  if (!/[a-zA-Z]/.test(newPassword.value) || !/\d/.test(newPassword.value)) {
+    appStore.showToast("密码必须包含字母和数字", "error");
+    return;
+  }
+  passwordUpdating.value = true;
+  sendBindPasswordUpdate({ password: newPassword.value });
+}
+
+function cancelPasswordForm() {
+  showPasswordForm.value = false;
+  newPassword.value = "";
+  confirmPassword.value = "";
+  showNewPassword.value = false;
+  showConfirmPassword.value = false;
+}
+
 function formatCountdown(s: number): string {
   const m = Math.floor(s / 60);
   const sec = s % 60;
@@ -113,10 +173,13 @@ function cancelRemove() {
 
 onMounted(() => {
   requestBindList();
+  sendBindPasswordConfig();
 });
 
 onUnmounted(() => {
   setOnBindShareCreated(null);
+  setOnBindPasswordConfig(null);
+  setOnBindPasswordUpdate(null);
   if (_countdownTimer) {
     clearInterval(_countdownTimer);
     _countdownTimer = null;
@@ -155,6 +218,66 @@ onUnmounted(() => {
           </button>
         </div>
         <p class="share-hint">将链接发送给其他设备，打开后可自动连接并绑定（2分钟内有效）</p>
+      </div>
+    </div>
+
+    <!-- 密码绑定配置 -->
+    <div class="password-section">
+      <div class="password-header">
+        <span class="password-title">🔐 密码绑定</span>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            :checked="passwordEnabled"
+            @change="togglePasswordEnabled"
+            :disabled="passwordUpdating"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p class="password-hint">开启后，客户端可通过输入机器人密码完成绑定</p>
+      <div v-if="passwordEnabled" class="password-actions">
+        <button v-if="!showPasswordForm" class="btn-change-pwd" @click="showPasswordForm = true">
+          {{ passwordHasPassword ? '修改密码' : '设置密码' }}
+        </button>
+        <div v-else class="password-form">
+          <div class="pwd-input-wrap">
+            <input
+              v-model="newPassword"
+              :type="showNewPassword ? 'text' : 'password'"
+              class="pwd-input"
+              placeholder="新密码（至少6位，字母+数字）"
+            />
+            <button
+              type="button"
+              class="pwd-toggle"
+              @click="showNewPassword = !showNewPassword"
+              tabindex="-1"
+            >{{ showNewPassword ? '🙈' : '👁️' }}</button>
+          </div>
+          <div class="pwd-input-wrap">
+            <input
+              v-model="confirmPassword"
+              :type="showConfirmPassword ? 'text' : 'password'"
+              class="pwd-input"
+              placeholder="确认新密码"
+            />
+            <button
+              type="button"
+              class="pwd-toggle"
+              @click="showConfirmPassword = !showConfirmPassword"
+              tabindex="-1"
+            >{{ showConfirmPassword ? '🙈' : '👁️' }}</button>
+          </div>
+          <div class="pwd-btn-group">
+            <button class="btn-save-pwd" @click="savePassword" :disabled="passwordUpdating">
+              {{ passwordUpdating ? '保存中...' : '保存' }}
+            </button>
+            <button class="btn-cancel-pwd" @click="cancelPasswordForm" :disabled="passwordUpdating">
+              取消
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -386,6 +509,183 @@ h3 {
   font-size: 11px;
   color: var(--text-secondary);
   line-height: 1.4;
+}
+
+/* 密码绑定配置 */
+.password-section {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.password-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.password-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.password-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.password-actions {
+  margin-top: 12px;
+}
+
+.btn-change-pwd {
+  padding: 6px 16px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-change-pwd:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pwd-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pwd-input {
+  width: 100%;
+  padding: 8px 40px 8px 12px;
+  font-size: 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.pwd-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pwd-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.pwd-toggle:hover {
+  opacity: 1;
+}
+
+.pwd-btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-save-pwd {
+  padding: 6px 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-save-pwd:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn-save-pwd:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-cancel-pwd {
+  padding: 6px 16px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 开关 */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  transition: 0.3s;
+}
+
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  bottom: 2px;
+  background: var(--text-secondary);
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+  background: #fff;
 }
 
 .empty-list {

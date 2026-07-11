@@ -93,6 +93,18 @@ export function setOnBindShareCreated(fn: ((code: string, expiresIn: number) => 
   _onBindShareCreated = fn;
 }
 
+/** bind_password_config_ack 回调（由 ClientManagementView 设置，获取密码绑定配置） */
+let _onBindPasswordConfig: ((enabled: boolean, hasPassword: boolean) => void) | null = null;
+export function setOnBindPasswordConfig(fn: ((enabled: boolean, hasPassword: boolean) => void) | null): void {
+  _onBindPasswordConfig = fn;
+}
+
+/** bind_password_update_ack 回调（由 ClientManagementView 设置，密码更新结果） */
+let _onBindPasswordUpdate: ((success: boolean, error?: string) => void) | null = null;
+export function setOnBindPasswordUpdate(fn: ((success: boolean, error?: string) => void) | null): void {
+  _onBindPasswordUpdate = fn;
+}
+
 /* ---- 客户端绑定凭据管理 ---- */
 const CLIENT_ID_KEY = "wobot_client_id";
 const CLIENT_NAME_KEY = "wobot_client_name";
@@ -990,6 +1002,18 @@ export function useWebSocket() {
         if (_onBindShareCreated) _onBindShareCreated(code, expiresIn);
         break;
       }
+      case "bind_password_config_ack": {
+        const enabled = Boolean(data.enabled);
+        const hasPassword = Boolean(data.hasPassword);
+        if (_onBindPasswordConfig) _onBindPasswordConfig(enabled, hasPassword);
+        break;
+      }
+      case "bind_password_update_ack": {
+        const success = Boolean(data.success);
+        const error = data.error ? String(data.error) : undefined;
+        if (_onBindPasswordUpdate) _onBindPasswordUpdate(success, error);
+        break;
+      }
       case "force_disconnect": {
         // 被踢下线
         console.log("[WS] Force disconnected:", data.reason);
@@ -1231,6 +1255,15 @@ export function useWebSocket() {
       },
     }, true);
   }
+  function sendBindPassword(requestToken: string, password: string): void {
+    _send({ type: "bind_password", data: { requestToken, password } }, true);
+  }
+  function sendBindPasswordConfig(): void {
+    _send({ type: "bind_password_config", data: {} }, true);
+  }
+  function sendBindPasswordUpdate(updateData: { password?: string; enabled?: boolean }): void {
+    _send({ type: "bind_password_update", data: updateData }, true);
+  }
 
   function cleanup(): void {
     disconnect();
@@ -1318,5 +1351,8 @@ export function useWebSocket() {
     sendBindCancel,
     sendBindShareCreate,
     sendBindShareUse,
+    sendBindPassword,
+    sendBindPasswordConfig,
+    sendBindPasswordUpdate,
   };
 }
