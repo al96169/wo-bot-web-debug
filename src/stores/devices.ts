@@ -6,9 +6,18 @@ import { useAppStore } from "../stores/app";
  * wo-bot-vue - 设备管理 (Pinia Store)
  * ============================================================ */
 
-/** 生成短 ID */
+/** 生成设备唯一标识符（UUID v4） */
 function genId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  // 优先使用浏览器原生 crypto.randomUUID()
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // 降级方案：手动生成 UUID v4 格式
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 /* ---- 连接状态 tooltip HTML 生成 ---- */
@@ -145,6 +154,23 @@ export const useDevicesStore = defineStore("devices", {
         }
       }
       this.currentDevice = device;
+      this.saveDevices();
+    },
+
+    /** 连接成功后用后端 robot_id 更新当前设备 ID（后端为准，保证全局一致） */
+    updateCurrentDeviceId(robotId: string): void {
+      if (!robotId || !this.currentDevice) return;
+      const oldId = this.currentDevice.id;
+      // ID 已一致，无需更新
+      if (oldId === robotId) return;
+      // 更新设备列表中的 ID
+      const dev = this.devices.find((d) => d.id === oldId);
+      if (dev) {
+        dev.id = robotId;
+      }
+      // 更新当前设备引用
+      this.currentDevice.id = robotId;
+      console.log("[DevicesStore] updateCurrentDeviceId:", oldId, "->", robotId);
       this.saveDevices();
     },
 

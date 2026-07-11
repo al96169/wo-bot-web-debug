@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import {
   useWebSocket,
   getClientId,
@@ -13,14 +13,14 @@ import type { BindingMethod, AuthRequiredData } from "@/types";
 import { useDevicesStore } from "@/stores/devices";
 
 const devicesStore = useDevicesStore();
-const { sendBindRequest, sendBindVerify, sendBindReplay, sendBindStartScan, sendBindCancel } = useWebSocket();
+const { sendBindRequest, sendBindVerify, sendBindReplay, sendBindStartScan, sendBindCancel, sendBindShareUse } = useWebSocket();
 
 const props = defineProps<{
   authData: AuthRequiredData | null;
 }>();
 
 // ---- 状态 ----
-const step = ref<"select" | "display" | "tts" | "qr_scan" | "gimbal" | "success" | "failed">("select");
+const step = ref<"select" | "display" | "tts" | "qr_scan" | "gimbal" | "share_code" | "success" | "failed">("select");
 const requestToken = ref("");
 const errorMessage = ref("");
 const attempts = ref(0);
@@ -30,6 +30,8 @@ const isSubmitting = ref(false);
 // 云台方向输入
 const gimbalSequenceLength = 4;
 const gimbalInputs = ref<string[]>([]);
+// 分享码输入
+const shareCodeInput = ref("");
 
 // ---- 方式选择 ----
 const methodLabels: Record<BindingMethod, string> = {
@@ -37,6 +39,7 @@ const methodLabels: Record<BindingMethod, string> = {
   qr_scan: "二维码扫描",
   tts: "语音播报",
   gimbal: "云台动作",
+  share_code: "输入绑定码",
 };
 
 const methodIcons: Record<BindingMethod, string> = {
@@ -44,6 +47,7 @@ const methodIcons: Record<BindingMethod, string> = {
   qr_scan: "📷",
   tts: "🔊",
   gimbal: "🎮",
+  share_code: "🔗",
 };
 
 const methodDescriptions: Record<BindingMethod, string> = {
@@ -51,9 +55,26 @@ const methodDescriptions: Record<BindingMethod, string> = {
   qr_scan: "机器人的摄像头将扫描你屏幕上的二维码",
   tts: "机器人将通过语音播报 4 位数字，请在此输入",
   gimbal: "观察云台转动方向，依次点击对应方向按钮",
+  share_code: "输入从其他设备获取的 6 位分享码直接绑定",
 };
 
+/** 服务端可用方式 + 始终可用的分享码方式 */
+const availableMethodList = computed<BindingMethod[]>(() => {
+  const serverMethods = props.authData?.methods || availableMethods.value;
+  if (serverMethods.includes("share_code" as BindingMethod)) return serverMethods;
+  return [...serverMethods, "share_code"];
+});
+
 function selectMethod(method: BindingMethod) {
+  // 分享码方式不需要 bind_request，直接展示输入界面
+  if (method === "share_code") {
+    step.value = "share_code";
+    errorMessage.value = "";
+    shareCodeInput.value = "";
+    isSubmitting.value = false;
+    return;
+  }
+
   requestToken.value = "rt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
   errorMessage.value = "";
   randomCode.value = "";
@@ -63,6 +84,13 @@ function selectMethod(method: BindingMethod) {
 
   sendBindRequest(requestToken.value, method);
   step.value = method;
+}
+
+// ---- 分享码提交 ----
+function submitShareCode() {
+  if (!shareCodeInput.value || isSubmitting.value) return;
+  isSubmitting.value = true;
+  sendBindShareUse(shareCodeInput.value.trim().toUpperCase());
 }
 
 // ---- 回调注册 ----
@@ -147,6 +175,7 @@ function backToSelect() {
   errorMessage.value = "";
   randomCode.value = "";
   gimbalInputs.value = [];
+  shareCodeInput.value = "";
   scanStarted.value = false;
   isSubmitting.value = false;
 }
@@ -170,7 +199,7 @@ onUnmounted(() => {
       <p class="hint">{{ props.authData?.message || "请选择绑定认证方式" }}</p>
       <div class="methods-grid">
         <button
-          v-for="method in (props.authData?.methods || availableMethods)"
+          v-for="method in availableMethodList"
           :key="method"
           class="method-card"
           @click="selectMethod(method)"
@@ -270,6 +299,26 @@ onUnmounted(() => {
       <div class="btn-group">
         <button class="btn-primary" :disabled="gimbalInputs.length !== gimbalSequenceLength || isSubmitting" @click="submitGimbalSequence">确认</button>
         <button class="btn-secondary" @click="replay" :disabled="isSubmitting">重新转动</button>
+        <button class="btn-back" @click="backToSelect" :disabled="isSubmitting">返回</button>
+      </div>
+    </div>
+
+    <!-- 分享码输入方式 -->
+    <div v-else-if="step === 'share_code'" class="method-step">
+      <h2>输入绑定码</h2>
+      <p class="hint">请输入从其他设备获取的 6 位分享码</p>
+      <input
+        v-model="shareCodeInput"
+        class="code-input share-code-input"
+        type="text"
+        maxlength="6"
+        placeholder="ABC123"
+        @keyup.enter="submitShareCode"
+      />
+      <div class="btn-group">
+        <button class="btn-primary" :disabled="shareCodeInput.length !== 6 || isSubmitting" @click="submitShareCode">
+          {{ isSubmitting ? '绑定中...' : '确认绑定' }}
+        </button>
         <button class="btn-back" @click="backToSelect" :disabled="isSubmitting">返回</button>
       </div>
     </div>
@@ -391,6 +440,12 @@ h2 {
 .code-input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.share-code-input {
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  font-size: 20px;
 }
 
 .btn-primary {

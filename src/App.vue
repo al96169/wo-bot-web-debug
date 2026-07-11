@@ -3,7 +3,7 @@ import { ref, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
-import { useWebSocket, getRemoteFeatures, setOnVersionMismatch, setOnReconnect, setOnAuthRequired, authRequired } from "@/composables/useWebSocket";
+import { useWebSocket, getRemoteFeatures, setOnVersionMismatch, setOnReconnect, setOnAuthRequired, authRequired, setPendingShareCode, getStoredBinding } from "@/composables/useWebSocket";
 import { useWebRTC } from "@/composables/useWebRTC";
 import { useMock } from "@/composables/useMock";
 import { useDiscovery } from "@/composables/useDiscovery";
@@ -156,7 +156,54 @@ devicesStore.loadDevices();
 const urlParams = new URLSearchParams(window.location.search);
 const shouldMock = urlParams.has("mock") ? urlParams.get("mock") !== "0" : import.meta.env.VITE_MOCK_DEFAULT === "true";
 
-if (shouldMock) {
+// 分享码自动连接：URL 带 robotIp + robotPort + shareCode 时自动连接并绑定
+const shareRobotIp = urlParams.get("robotIp") || "";
+const shareRobotPort = parseInt(urlParams.get("robotPort") || "0", 10);
+const shareCode = urlParams.get("shareCode") || "";
+const shareRobotId = urlParams.get("robotId") || "";
+
+if (shareRobotIp && shareRobotPort && shareCode) {
+  // 清理 URL 中的敏感参数，避免刷新时重复使用
+  urlParams.delete("robotIp");
+  urlParams.delete("robotPort");
+  urlParams.delete("shareCode");
+  urlParams.delete("robotId");
+  const cleanQuery = urlParams.toString();
+  const cleanUrl = window.location.pathname + (cleanQuery ? `?${cleanQuery}` : "");
+  window.history.replaceState({}, "", cleanUrl);
+  // 延迟处理（等待 stores 初始化）
+  setTimeout(() => {
+    // 优先用 robotId 匹配，其次用 IP:port 匹配
+    const existingDevice = devicesStore.devices.find(
+      (d) => (shareRobotId && d.id === shareRobotId) || (d.ip === shareRobotIp && d.port === shareRobotPort),
+    );
+    if (existingDevice) {
+      // 设备已存在，检查是否已绑定
+      const binding = getStoredBinding(shareRobotId || existingDevice.id, shareRobotIp, shareRobotPort);
+      if (binding) {
+        // 已绑定：无需使用分享码，直接连接
+        appStore.showToast("该设备已绑定，无需重复绑定", "info");
+        console.log("[App] 分享链接：设备已存在且已绑定，直接连接");
+        connectDirectly(existingDevice);
+        return;
+      }
+      // 未绑定：复用已有设备，使用分享码绑定
+      setPendingShareCode(shareCode);
+      console.log("[App] 分享链接：设备已存在但未绑定，使用分享码绑定");
+      connectDirectly(existingDevice);
+      return;
+    }
+    // 设备不存在：创建新设备，连接后由后端 robot_id 覆盖本地临时 ID
+    setPendingShareCode(shareCode);
+    const newDevice = devicesStore.addDevice({
+      name: `机器人 ${shareRobotIp}`,
+      ip: shareRobotIp,
+      port: shareRobotPort,
+    });
+    console.log("[App] 分享链接：新设备，使用分享码连接:", shareRobotIp, shareRobotPort);
+    connectDirectly(newDevice);
+  }, 500);
+} else if (shouldMock) {
   startMockMode();
 } else {
   // 非 Mock 模式：延迟 1 秒后自动扫描局域网设备

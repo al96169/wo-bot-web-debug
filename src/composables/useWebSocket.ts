@@ -87,6 +87,12 @@ export function setOnBindRequestAck(
   _onBindRequestAck = fn;
 }
 
+/** bind_share_created 回调（由 ClientManagementView 设置，收到分享码后显示） */
+let _onBindShareCreated: ((code: string, expiresIn: number) => void) | null = null;
+export function setOnBindShareCreated(fn: ((code: string, expiresIn: number) => void) | null): void {
+  _onBindShareCreated = fn;
+}
+
 /* ---- 客户端绑定凭据管理 ---- */
 const CLIENT_ID_KEY = "wobot_client_id";
 const CLIENT_NAME_KEY = "wobot_client_name";
@@ -280,6 +286,12 @@ export function setAuthToken(token: string): void {
   _token = token;
 }
 
+/** 待使用的分享码（URL 自动绑定时设置，connect 时消费一次后清除） */
+let _pendingShareCode = "";
+export function setPendingShareCode(code: string): void {
+  _pendingShareCode = code;
+}
+
 /** 最大排队消息数量，防止断连时内存泄漏 */
 const MAX_PENDING_QUEUE = 50;
 
@@ -363,6 +375,11 @@ export function useWebSocket() {
     const storedBinding = getStoredBinding(robotId, ip, port);
     if (storedBinding) {
       url += `&clientToken=${encodeURIComponent(storedBinding.clientToken)}`;
+    }
+    // 附加 shareCode（用于分享码自动绑定，仅首次连接时使用）
+    if (_pendingShareCode) {
+      url += `&shareCode=${encodeURIComponent(_pendingShareCode)}`;
+      _pendingShareCode = ""; // 消费后清除，避免重连时重复使用
     }
     console.log("[WS] connect() 创建 WebSocket:", url);
     const socket = new WebSocket(url);
@@ -563,6 +580,27 @@ export function useWebSocket() {
           features: Array.isArray(data.features) ? (data.features as string[]) : [],
         });
         _remoteFeatures.value = Array.isArray(data.features) ? (data.features as string[]) : [];
+        // 用后端 robot_id 更新当前设备 ID，保证全局一致
+        const connectedRobotId = String(data.robot_id ?? "");
+        if (connectedRobotId) {
+          devicesStore.updateCurrentDeviceId(connectedRobotId);
+        }
+        // 如果服务端返回了 clientToken（通过分享码自动绑定），保存绑定凭据
+        if (data.clientToken) {
+          const robotId = String(data.robot_id ?? "");
+          const ip = _connectedIp.value;
+          const port = _connectedPort.value;
+          saveStoredBinding({
+            robotId,
+            clientId: getClientId(),
+            clientToken: String(data.clientToken),
+            deviceIp: ip,
+            devicePort: port,
+          });
+          isBound.value = true;
+          appStore.showToast("已通过分享码自动绑定", "success");
+          console.log("[WS] Auto-bound via share code, saved clientToken");
+        }
         // 连接成功后自动订阅状态 + 获取摄像头列表
         _send({ type: "subscribe", data: { events: ["status"] } });
         requestCameraStatus();
@@ -945,6 +983,13 @@ export function useWebSocket() {
         console.log("[WS] Bind cancelled");
         break;
       }
+      case "bind_share_created": {
+        const code = String(data.code ?? "");
+        const expiresIn = Number(data.expires_in ?? 120);
+        console.log("[WS] Share code created:", code, "expires in", expiresIn, "s");
+        if (_onBindShareCreated) _onBindShareCreated(code, expiresIn);
+        break;
+      }
       case "force_disconnect": {
         // 被踢下线
         console.log("[WS] Force disconnected:", data.reason);
@@ -1173,6 +1218,19 @@ export function useWebSocket() {
   function sendBindCancel(requestToken: string): void {
     _send({ type: "bind_cancel", data: { requestToken } }, true);
   }
+  function sendBindShareCreate(): void {
+    _send({ type: "bind_share_create", data: {} }, true);
+  }
+  function sendBindShareUse(shareCode: string): void {
+    _send({
+      type: "bind_share_use",
+      data: {
+        shareCode,
+        clientId: getClientId(),
+        clientName: getClientName(),
+      },
+    }, true);
+  }
 
   function cleanup(): void {
     disconnect();
@@ -1258,5 +1316,7 @@ export function useWebSocket() {
     sendBindReplay,
     sendBindStartScan,
     sendBindCancel,
+    sendBindShareCreate,
+    sendBindShareUse,
   };
 }

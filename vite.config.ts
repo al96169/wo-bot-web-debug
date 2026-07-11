@@ -50,6 +50,7 @@ function wsProxyPlugin() {
         const token = url.searchParams.get('token')
         const clientId = url.searchParams.get('clientId')
         const clientToken = url.searchParams.get('clientToken')
+        const shareCode = url.searchParams.get('shareCode')
 
         if (!host || !port) {
           socket.write('HTTP/1.1 400 Bad Request\r\n\r\n')
@@ -63,6 +64,7 @@ function wsProxyPlugin() {
         if (token) targetParams.push(`token=${encodeURIComponent(token)}`)
         if (clientId) targetParams.push(`clientId=${encodeURIComponent(clientId)}`)
         if (clientToken) targetParams.push(`clientToken=${encodeURIComponent(clientToken)}`)
+        if (shareCode) targetParams.push(`shareCode=${encodeURIComponent(shareCode)}`)
         // 传递客户端真实 IP，用于 Jetson 端修复 mDNS .local 解析错误
         const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || ''
         const clientIp = normalizeClientIp(rawIp)

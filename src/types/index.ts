@@ -275,7 +275,7 @@ export interface ConnectionInfo {
 /* ---- 客户端绑定认证 (R00035) ---- */
 
 /** 绑定认证方式 */
-export type BindingMethod = "display" | "qr_scan" | "tts" | "gimbal";
+export type BindingMethod = "display" | "qr_scan" | "tts" | "gimbal" | "share_code";
 
 /** auth_required 消息数据 */
 export interface AuthRequiredData {
