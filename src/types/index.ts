@@ -157,7 +157,7 @@ export interface SystemStatus {
 /* ---- 联合类型 / 字面量类型 ---- */
 
 /** 连接状态 */
-export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "binding" | "error";
 
 /** 控制模式 */
 export type ControlMode = "manual" | "semi" | "auto";
@@ -270,4 +270,68 @@ export interface ConnectionInfo {
   robotId: string;
   version: string;
   features: string[];
+}
+
+/* ---- 客户端绑定认证 (R00035) ---- */
+
+/** 绑定认证方式 */
+export type BindingMethod = "display" | "qr_scan" | "tts" | "gimbal";
+
+/** auth_required 消息数据 */
+export interface AuthRequiredData {
+  methods: BindingMethod[];
+  message: string;
+}
+
+/** bind_request 消息数据（客户端发起绑定请求） */
+export interface BindRequestData {
+  requestToken: string;
+  clientId: string;
+  clientName: string;
+  method: BindingMethod;
+}
+
+/** bind_request_ack 消息数据 */
+export interface BindRequestAckData {
+  requestToken: string;
+  method: BindingMethod;
+  /** gimbal 方式：4 个方向选项 */
+  options?: string[][];
+}
+
+/** bind_verify 消息数据（客户端提交验证码） */
+export interface BindVerifyData {
+  requestToken: string;
+  randomCode: string;
+}
+
+/** bind_success 消息数据 */
+export interface BindSuccessData {
+  clientToken: string;
+  clientId: string;
+}
+
+/** bind_failed 消息数据 */
+export interface BindFailedData {
+  error: string;
+  attempts: number;
+}
+
+/** 已绑定客户端信息（bind_list 返回） */
+export interface BindingInfo {
+  clientId: string;
+  clientName: string;
+  boundAt: string;
+  lastSeen: string;
+}
+
+/** 本地存储的绑定凭据 */
+export interface StoredBinding {
+  robotId: string;
+  deviceIp: string;
+  devicePort: number;
+  clientId: string;
+  clientToken: string;
+  clientName: string;
+  boundAt: string;
 }

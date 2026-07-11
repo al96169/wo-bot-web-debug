@@ -4,6 +4,9 @@ import { useDevicesStore } from "../stores/devices";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
 import { resolveWebRTCAnswer, handleWebRTCIceCandidate } from "./useWebRTC";
 import type {
+  AuthRequiredData,
+  BindingInfo,
+  BindingMethod,
   DanceInfo,
   LogEntry,
   Module,
@@ -12,6 +15,7 @@ import type {
   ServiceInfo,
   Software,
   SoftwareTask,
+  StoredBinding,
 } from "../types";
 
 /* ============================================================
@@ -55,6 +59,117 @@ export function setOnReconnect(fn: (() => void) | null): void {
 let _onVersionMismatch: (() => void) | null = null;
 export function setOnVersionMismatch(fn: (() => void) | null): void {
   _onVersionMismatch = fn;
+}
+
+/** auth_required 回调（由 App.vue 设置，收到 auth_required 消息时触发） */
+let _onAuthRequired: ((data: AuthRequiredData) => void) | null = null;
+export function setOnAuthRequired(fn: ((data: AuthRequiredData) => void) | null): void {
+  _onAuthRequired = fn;
+}
+
+/** 绑定成功回调（由 BindView 设置，收到 bind_success 消息时触发） */
+let _onBindSuccess: ((clientId: string, clientToken: string) => void) | null = null;
+export function setOnBindSuccess(fn: ((clientId: string, clientToken: string) => void) | null): void {
+  _onBindSuccess = fn;
+}
+
+/** 绑定失败回调（由 BindView 设置，收到 bind_failed 消息时触发） */
+let _onBindFailed: ((error: string, attempts: number) => void) | null = null;
+export function setOnBindFailed(fn: ((error: string, attempts: number) => void) | null): void {
+  _onBindFailed = fn;
+}
+
+/** bind_request_ack 回调（由 BindView 设置，收到 ack 后更新 UI） */
+let _onBindRequestAck: ((requestToken: string, method: BindingMethod, options?: string[][]) => void) | null = null;
+export function setOnBindRequestAck(
+  fn: ((requestToken: string, method: BindingMethod, options?: string[][]) => void) | null,
+): void {
+  _onBindRequestAck = fn;
+}
+
+/* ---- 客户端绑定凭据管理 ---- */
+const CLIENT_ID_KEY = "wobot_client_id";
+const CLIENT_NAME_KEY = "wobot_client_name";
+const BINDINGS_KEY = "wobot_bindings"; // 存储所有已绑定机器人的凭据
+
+/** 当前是否需要绑定认证 */
+export const authRequired = ref(false);
+/** 服务端返回的可用认证方式 */
+export const availableMethods = ref<BindingMethod[]>([]);
+/** 当前是否已绑定（连接时通过 URL 传递 clientId/clientToken 验证） */
+export const isBound = ref(false);
+
+/** 获取或生成客户端持久 ID */
+export function getClientId(): string {
+  let id = localStorage.getItem(CLIENT_ID_KEY);
+  if (!id) {
+    id = "c-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem(CLIENT_ID_KEY, id);
+  }
+  return id;
+}
+
+/** 获取或生成客户端名称 */
+export function getClientName(): string {
+  let name = localStorage.getItem(CLIENT_NAME_KEY);
+  if (!name) {
+    const platform = navigator.platform || "Web";
+    name = `${platform} ${new Date().toLocaleDateString()}`;
+    localStorage.setItem(CLIENT_NAME_KEY, name);
+  }
+  return name;
+}
+
+/** 获取指定机器人的绑定凭据（优先用 robotId，其次用 IP:port） */
+export function getStoredBinding(robotId: string, ip?: string, port?: number): StoredBinding | null {
+  try {
+    const raw = localStorage.getItem(BINDINGS_KEY);
+    if (!raw) return null;
+    const bindings: StoredBinding[] = JSON.parse(raw);
+    // 优先用 robotId 查找
+    if (robotId) {
+      const found = bindings.find((b) => b.robotId === robotId);
+      if (found) return found;
+    }
+    // robotId 为空时用 IP:port 查找
+    if (ip && port) {
+      const found = bindings.find((b) => b.deviceIp === ip && b.devicePort === port);
+      if (found) return found;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** 保存绑定凭据 */
+export function saveStoredBinding(binding: StoredBinding): void {
+  try {
+    const raw = localStorage.getItem(BINDINGS_KEY);
+    const bindings: StoredBinding[] = raw ? JSON.parse(raw) : [];
+    const idx = bindings.findIndex((b) => b.robotId === binding.robotId);
+    if (idx >= 0) {
+      bindings[idx] = binding;
+    } else {
+      bindings.push(binding);
+    }
+    localStorage.setItem(BINDINGS_KEY, JSON.stringify(bindings));
+  } catch {
+    // localStorage 可能不可用
+  }
+}
+
+/** 移除指定机器人的绑定凭据 */
+export function removeStoredBinding(robotId: string): void {
+  try {
+    const raw = localStorage.getItem(BINDINGS_KEY);
+    if (!raw) return;
+    const bindings: StoredBinding[] = JSON.parse(raw);
+    const filtered = bindings.filter((b) => b.robotId !== robotId);
+    localStorage.setItem(BINDINGS_KEY, JSON.stringify(filtered));
+  } catch {
+    // ignore
+  }
 }
 
 /** 握手是否已通过（收到 connected 消息为 true） */
@@ -240,6 +355,14 @@ export function useWebSocket() {
     }
     if (_token) {
       url += `&token=${encodeURIComponent(_token)}`;
+    }
+    // 附加 clientId 和 clientToken（用于绑定认证）
+    const clientId = getClientId();
+    url += `&clientId=${encodeURIComponent(clientId)}`;
+    const robotId = devicesStore.robotInfo?.robot_id || "";
+    const storedBinding = getStoredBinding(robotId, ip, port);
+    if (storedBinding) {
+      url += `&clientToken=${encodeURIComponent(storedBinding.clientToken)}`;
     }
     console.log("[WS] connect() 创建 WebSocket:", url);
     const socket = new WebSocket(url);
@@ -429,6 +552,9 @@ export function useWebSocket() {
         appStore.connection = "connected";
         appStore.showToast("信令通道已建立", "success");
         reconnectCount.value = 0;
+        // 默认假定已绑定，若服务端发送 auth_required 则修正为 false
+        isBound.value = true;
+        authRequired.value = false;
         devicesStore.setRobotInfo({
           robot_id: String(data.robot_id ?? ""),
           name: String(data.name ?? ""),
@@ -451,6 +577,21 @@ export function useWebSocket() {
         // 启动心跳
         startHeartbeat();
         break;
+      case "auth_required": {
+        // 服务端要求绑定认证
+        authRequired.value = true;
+        isBound.value = false;
+        appStore.connection = "binding";
+        const methods = Array.isArray(data.methods) ? (data.methods as BindingMethod[]) : [];
+        availableMethods.value = methods;
+        const authData: AuthRequiredData = {
+          methods,
+          message: String(data.message ?? "请先完成客户端绑定认证"),
+        };
+        if (_onAuthRequired) _onAuthRequired(authData);
+        console.log("[WS] auth_required, methods:", methods);
+        break;
+      }
       case "webrtc_answer":
         resolveWebRTCAnswer(String(data.sdp ?? ""));
         break;
@@ -731,6 +872,88 @@ export function useWebSocket() {
         }
         break;
       }
+      // ---- 绑定认证 ----
+      case "bind_request_ack": {
+        if (_onBindRequestAck) {
+          _onBindRequestAck(
+            String(data.requestToken ?? ""),
+            String(data.method ?? "") as BindingMethod,
+            Array.isArray(data.options) ? (data.options as string[][]) : undefined,
+          );
+        }
+        break;
+      }
+      case "bind_success": {
+        const clientId = String(data.clientId ?? "");
+        const clientToken = String(data.clientToken ?? "");
+        // 保存绑定凭据到 localStorage
+        const robotId = devicesStore.robotInfo?.robot_id || "";
+        const { ip: connIp, port: connPort } = getConnectedEndpoint();
+        if (clientId && clientToken) {
+          saveStoredBinding({
+            robotId,
+            deviceIp: connIp,
+            devicePort: connPort,
+            clientId,
+            clientToken,
+            clientName: getClientName(),
+            boundAt: new Date().toISOString(),
+          });
+        }
+        isBound.value = true;
+        authRequired.value = false;
+        appStore.connection = "connected";
+        if (_onBindSuccess) _onBindSuccess(clientId, clientToken);
+        break;
+      }
+      case "bind_failed": {
+        const error = String(data.error ?? "绑定失败");
+        const attempts = Number(data.attempts ?? 0);
+        if (_onBindFailed) _onBindFailed(error, attempts);
+        break;
+      }
+      case "bind_list_ack": {
+        if (Array.isArray(data.bindings)) {
+          robotStore.setBindings(data.bindings as BindingInfo[]);
+        }
+        break;
+      }
+      case "bind_remove_ack": {
+        appStore.showToast("已移除绑定", "info");
+        requestBindList();
+        break;
+      }
+      case "bind_remove_all_ack": {
+        appStore.showToast(`已移除所有绑定 (${data.count ?? 0})`, "info");
+        requestBindList();
+        break;
+      }
+      case "bind_scan_started": {
+        console.log("[WS] QR scan started");
+        break;
+      }
+      case "bind_replay_ack": {
+        console.log("[WS] Replay done:", data.method);
+        break;
+      }
+      case "bind_list_update": {
+        // 绑定列表实时更新（新绑定/移除时广播）
+        robotStore.setBindings((data.bindings as BindingInfo[]) || []);
+        break;
+      }
+      case "bind_cancel_ack": {
+        console.log("[WS] Bind cancelled");
+        break;
+      }
+      case "force_disconnect": {
+        // 被踢下线
+        console.log("[WS] Force disconnected:", data.reason);
+        appStore.showToast(`已被移除绑定: ${data.reason}`, "error");
+        authRequired.value = true;
+        isBound.value = false;
+        appStore.connection = "binding";
+        break;
+      }
       case "error":
         console.warn(`[Signaling:error] ${String(data.message ?? "未知错误")}`);
         // 503 表示可选服务不可用（如摄像头/Rosmaster），不弹 Toast
@@ -918,6 +1141,39 @@ export function useWebSocket() {
     _send({ type: "logs", data: { mode, since_line: sinceLine, before_line: beforeLine, limit, level } }, true);
   }
 
+  function requestBindList(): void {
+    _send({ type: "bind_list", data: {} }, true);
+  }
+  function sendBindRequest(requestToken: string, method: BindingMethod): void {
+    _send({
+      type: "bind_request",
+      data: {
+        requestToken,
+        clientId: getClientId(),
+        clientName: getClientName(),
+        method,
+      },
+    }, true);
+  }
+  function sendBindVerify(requestToken: string, randomCode: string): void {
+    _send({ type: "bind_verify", data: { requestToken, randomCode } }, true);
+  }
+  function sendBindRemove(targetClientId: string): void {
+    _send({ type: "bind_remove", data: { clientId: targetClientId } }, true);
+  }
+  function sendBindRemoveAll(): void {
+    _send({ type: "bind_remove_all", data: {} }, true);
+  }
+  function sendBindReplay(requestToken: string): void {
+    _send({ type: "bind_replay", data: { requestToken } }, true);
+  }
+  function sendBindStartScan(requestToken: string): void {
+    _send({ type: "bind_start_scan", data: { requestToken } }, true);
+  }
+  function sendBindCancel(requestToken: string): void {
+    _send({ type: "bind_cancel", data: { requestToken } }, true);
+  }
+
   function cleanup(): void {
     disconnect();
   }
@@ -994,5 +1250,13 @@ export function useWebSocket() {
     sendServiceControl,
     sendMusicCommand,
     requestLogs,
+    requestBindList,
+    sendBindRequest,
+    sendBindVerify,
+    sendBindRemove,
+    sendBindRemoveAll,
+    sendBindReplay,
+    sendBindStartScan,
+    sendBindCancel,
   };
 }

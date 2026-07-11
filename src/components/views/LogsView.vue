@@ -147,7 +147,7 @@ function handleVisibilityChange(): void {
 
 function handleScroll(): void {
   if (!logContainer.value) return;
-  const { scrollTop, scrollHeight, clientHeight } = logContainer.value;
+  const { scrollTop, scrollHeight } = logContainer.value;
 
   // 滚动到顶部：加载历史日志
   if (scrollTop < 50 && robotStore.logHasMore && !isLoadingMore.value) {
@@ -271,7 +271,7 @@ onUnmounted(() => {
       </div>
       <div ref="logContainer" class="logs-container" @scroll="handleScroll">
         <div v-if="filteredLogs.length === 0" class="empty-state">暂无日志</div>
-        <div v-for="(log, idx) in filteredLogs" :key="log.id" class="log-entry">
+        <div v-for="log in filteredLogs" :key="log.id" class="log-entry">
           <span class="log-time" :title="log.time">{{ formatTime(log.time) }}</span>
           <span class="log-level" :class="log.level">{{ log.level.toUpperCase() }}</span>
           <span class="log-source">{{ log.source }}</span>

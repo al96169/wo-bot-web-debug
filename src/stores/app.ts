@@ -76,6 +76,7 @@ export const useAppStore = defineStore("app", {
         disconnected: "未连接",
         connecting: "连接中...",
         connected: "已连接",
+        binding: "绑定中",
         error: "连接错误",
       };
       return map[this.connection] || "未连接";

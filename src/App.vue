@@ -3,7 +3,7 @@ import { ref, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
-import { useWebSocket, getRemoteFeatures, setOnVersionMismatch, setOnReconnect } from "@/composables/useWebSocket";
+import { useWebSocket, getRemoteFeatures, setOnVersionMismatch, setOnReconnect, setOnAuthRequired, authRequired } from "@/composables/useWebSocket";
 import { useWebRTC } from "@/composables/useWebRTC";
 import { useMock } from "@/composables/useMock";
 import { useDiscovery } from "@/composables/useDiscovery";
@@ -25,12 +25,13 @@ import SettingsView from "@/components/views/SettingsView.vue";
 import ProcessManagerView from "@/components/views/ProcessManagerView.vue";
 import MusicView from "@/components/views/MusicView.vue";
 import ConfigView from "@/components/views/ConfigView.vue";
+import BindView from "@/components/views/BindView.vue";
+import type { Device, ViewName, AuthRequiredData } from "@/types";
 import AddDeviceDialog from "@/components/dialogs/AddDeviceDialog.vue";
 import SwitchDeviceDialog from "@/components/dialogs/SwitchDeviceDialog.vue";
 import OpsConfirmDialog from "@/components/dialogs/OpsConfirmDialog.vue";
 import ConnectTimeoutDialog from "@/components/dialogs/ConnectTimeoutDialog.vue";
 import VersionMismatchDialog from "@/components/dialogs/VersionMismatchDialog.vue";
-import type { Device, ViewName } from "@/types";
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
@@ -39,6 +40,14 @@ const { connect, disconnect, sendSystemAction } = useWebSocket();
 const { establishConnection: establishWebRTC, close: closeWebRTC, webrtcState } = useWebRTC();
 const { startMockMode, stopMockMode } = useMock();
 const { startScan: startDiscoveryScan } = useDiscovery();
+
+// auth_required 数据（收到 auth_required 消息时填充）
+const authRequiredData = ref<AuthRequiredData | null>(null);
+
+// 注册 auth_required 回调
+setOnAuthRequired((data: AuthRequiredData) => {
+  authRequiredData.value = data;
+});
 
 // WebSocket "connected" 消息到达后立即建立 WebRTC
 let _webrtcTimer: ReturnType<typeof setTimeout> | null = null;
@@ -379,6 +388,13 @@ function handleTimeoutClose() {
   connectTimeout.value = null;
 }
 
+// 关闭绑定浮窗 = 断开连接
+function closeBindPanel() {
+  disconnect();
+  authRequired.value = false;
+  authRequiredData.value = null;
+}
+
 const viewsMap: Record<ViewName, unknown> = {
   quickActions: QuickActionsView,
   logs: LogsView,
@@ -403,11 +419,20 @@ const viewsMap: Record<ViewName, unknown> = {
       <AppSidebar @select-device="handleSelectDevice" @add-device="handleAddDevice" />
       <main class="main-content">
         <div class="views-container">
-          <div v-if="appStore.connection !== 'connected'" class="empty-state">
+          <!-- 绑定认证浮窗（覆盖层） -->
+          <div v-if="authRequired" class="bind-overlay">
+            <div class="bind-modal">
+              <button class="bind-close-btn" @click="closeBindPanel" title="关闭并断开连接">×</button>
+              <BindView :auth-data="authRequiredData" />
+            </div>
+          </div>
+          <!-- 未连接 -->
+          <div v-if="appStore.connection !== 'connected' && !authRequired" class="empty-state">
             <div class="empty-state-icon">🔌</div>
             <div class="empty-state-text">请连接机器人</div>
           </div>
-          <KeepAlive v-else>
+          <!-- 正常视图 -->
+          <KeepAlive v-if="appStore.connection === 'connected' && !authRequired">
             <component :is="viewsMap[appStore.currentView]" />
           </KeepAlive>
         </div>
@@ -467,6 +492,53 @@ const viewsMap: Record<ViewName, unknown> = {
   padding: 16px;
   display: flex;
   flex-direction: column;
+}
+
+/* 绑定浮窗 */
+.bind-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.bind-modal {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.bind-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: background 0.2s;
+}
+
+.bind-close-btn:hover {
+  background: var(--bg-hover);
 }
 
 .empty-state {

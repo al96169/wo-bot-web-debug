@@ -2,6 +2,7 @@
 import { ref, watch, onMounted } from "vue";
 import { useRobotStore } from "@/stores/robot";
 import { useWebSocket } from "@/composables/useWebSocket";
+import ClientManagementView from "@/components/views/ClientManagementView.vue";
 
 const robotStore = useRobotStore();
 const { send, sendWs } = useWebSocket();
@@ -32,7 +33,10 @@ watch(simulateBatteryLevel, (val) => {
   }, 300);
 });
 
-const tabs = [{ id: "system", label: "🖥️ 系统配置" }];
+const tabs = [
+  { id: "system", label: "🖥️ 系统配置" },
+  { id: "clients", label: "🔗 客户端管理" },
+];
 
 function textTime() {
   return new Date().toLocaleTimeString();
@@ -183,6 +187,11 @@ async function handleSaveThreshold() {
           </p>
         </div>
       </div>
+    </div>
+
+    <!-- 客户端管理面板 -->
+    <div v-if="activeTab === 'clients'" class="config-panel">
+      <ClientManagementView />
     </div>
   </div>
 </template>

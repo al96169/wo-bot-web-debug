@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import type {
+  BindingInfo,
   DanceInfo,
   GalleryItem,
   LogEntry,
@@ -149,6 +150,9 @@ export const useRobotStore = defineStore("robot", {
 
     /** 子服务列表 */
     services: [] as ServiceInfo[],
+
+    /** 已绑定客户端列表 */
+    bindings: [] as BindingInfo[],
 
     /** 舞蹈曲目列表 */
     dances: [] as DanceInfo[],
@@ -442,6 +446,10 @@ export const useRobotStore = defineStore("robot", {
 
     setServices(svcs: ServiceInfo[]): void {
       this.services = svcs;
+    },
+
+    setBindings(list: BindingInfo[]): void {
+      this.bindings = list;
     },
 
     /* ---- 舞蹈 ---- */
