@@ -335,3 +335,99 @@ export interface StoredBinding {
   clientName: string;
   boundAt: string;
 }
+
+/* ---- 机器人详细配置 (R00033) ---- */
+
+/** 运动驱动类型 */
+export type DriveType = "mecanum" | "ackermann" | "differential" | "tracked" | "biped" | "self_balancing" | "spider" | "custom";
+
+/** 机器人功能配置 */
+export interface FeaturesConfig {
+  websocket: boolean;
+  exec: boolean;
+  system: boolean;
+  motion: boolean;
+  camera: boolean;
+  gimbal: boolean;
+  dance: boolean;
+  music: boolean;
+  voice_broadcast: boolean;
+}
+
+/** 运动配置 */
+export interface MotionConfig {
+  drive_type: DriveType;
+  max_linear_speed: number;
+  max_angular_speed: number;
+  default_mode: string;
+  hardware_type: string;
+  serial_port: string;
+  serial_baudrate: number;
+}
+
+/** 摄像头配置 */
+export interface CameraConfig {
+  enabled: boolean;
+  default_camera: number;
+  resolution: { width: number; height: number };
+  fps: number;
+  stream_type: string;
+  /** 摄像头名称: {0: "前方摄像头", 1: "后方摄像头"} */
+  camera_names?: Record<number, string>;
+  /** 云台水平绑定 */
+  gimbal_pan_bind?: boolean;
+  /** 云台俯仰绑定 */
+  gimbal_tilt_bind?: boolean;
+  /** 画面水平翻转（镜像） */
+  flip_horizontal?: boolean;
+  /** 画面垂直翻转（倒置） */
+  flip_vertical?: boolean;
+}
+
+/** 云台配置 */
+export interface GimbalConfig {
+  enabled: boolean;
+  gimbal_type: string;
+  com: string;
+  car_type: number;
+  pan_channel: number;
+  tilt_channel: number;
+  pan_min: number;
+  pan_max: number;
+  pan_center: number;
+  tilt_min: number;
+  tilt_max: number;
+  tilt_center: number;
+  pan_invert: boolean;
+  tilt_invert: boolean;
+  step: number;
+}
+
+/** 服务器/网络配置 */
+export interface ServerConfig {
+  host: string;
+  port: number;
+  http_port: number;
+  advertised_ip: string;
+}
+
+/** 机器人完整配置（config_get/config_set 使用） */
+export interface RobotConfig {
+  robot: { id: string; name: string; model: string; version: string };
+  server: ServerConfig;
+  motion: MotionConfig;
+  camera: CameraConfig;
+  gimbal: GimbalConfig;
+  features: FeaturesConfig;
+  binding: {
+    enabled: boolean;
+    max_clients: number;
+    max_failures: number;
+    cooldown_seconds: number;
+    session_timeout: number;
+    password_enabled: boolean;
+    methods: Record<string, boolean>;
+  };
+  power_policy: { threshold: number };
+  [key: string]: unknown;
+}

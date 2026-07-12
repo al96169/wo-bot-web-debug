@@ -89,11 +89,11 @@ export const useAppStore = defineStore("app", {
   },
 
   actions: {
-    /** Toast 提示（自动 3 秒消失） */
+    /** Toast 提示（自动 3 秒消失，相同消息去重） */
     showToast(message: string, type: "success" | "error" | "info" = "info") {
+      if (this.toast?.message === message && this.toast?.type === type) return;
       const id = Date.now();
       this.toast = { message, type, id };
-      // 错误类型的 Toast 同步输出到浏览器控制台
       if (type === "error") {
         console.error(`[Toast:error] ${message}`);
       }

@@ -1,21 +1,42 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from "vue";
+import { onMounted, onUnmounted, ref, computed, watch } from "vue";
+import type { RobotConfig } from "@/types";
 import {
   useWebSocket,
   getClientId,
   setOnBindShareCreated,
-  setOnBindPasswordConfig,
-  setOnBindPasswordUpdate,
   getConnectedEndpoint,
 } from "@/composables/useWebSocket";
 import { useRobotStore } from "@/stores/robot";
 import { useDevicesStore } from "@/stores/devices";
 import { useAppStore } from "@/stores/app";
 
+const props = defineProps<{
+  editConfig: RobotConfig;
+}>();
+
 const robotStore = useRobotStore();
 const devicesStore = useDevicesStore();
 const appStore = useAppStore();
-const { requestBindList, sendBindRemove, sendBindShareCreate, sendBindPasswordConfig, sendBindPasswordUpdate } = useWebSocket();
+const { requestBindList, sendBindRemove, sendBindShareCreate } = useWebSocket();
+
+const METHOD_ICONS: Record<string, string> = {
+  display: "🖥️",
+  tts: "🔊",
+  qr_scan: "📷",
+  gimbal: "🎯",
+  password: "🔑",
+  share_code: "🔗",
+};
+
+const METHOD_LABELS: Record<string, string> = {
+  display: "屏幕显示验证码",
+  tts: "语音播报验证码",
+  qr_scan: "二维码扫描",
+  gimbal: "云台动作验证",
+  password: "密码绑定",
+  share_code: "分享码绑定",
+};
 
 const removeTarget = ref<string | null>(null);
 const currentClientId = getClientId();
@@ -23,7 +44,7 @@ const currentClientId = getClientId();
 // ---- 分享绑定 ----
 const shareCode = ref("");
 const shareExpiresIn = ref(0);
-const shareCountdown = ref(0); // 剩余秒数
+const shareCountdown = ref(0);
 let _countdownTimer: ReturnType<typeof setInterval> | null = null;
 const shareCopied = ref(false);
 
@@ -44,7 +65,6 @@ function handleCreateShare() {
   sendBindShareCreate();
 }
 
-// 注册分享码生成回调
 setOnBindShareCreated((code, expiresIn) => {
   shareCode.value = code;
   shareExpiresIn.value = expiresIn;
@@ -83,63 +103,12 @@ function copyShareLink() {
   });
 }
 
-// ---- 密码绑定配置 ----
-const passwordEnabled = ref(false);
-const passwordHasPassword = ref(false);
+// ---- 密码绑定（直接写入 editConfig，通过统一「应用配置」保存） ----
 const showPasswordForm = ref(false);
-const newPassword = ref("");
+const editPassword = ref("");
 const confirmPassword = ref("");
-const passwordUpdating = ref(false);
 const showNewPassword = ref(false);
 const showConfirmPassword = ref(false);
-
-setOnBindPasswordConfig((enabled, hasPassword) => {
-  passwordEnabled.value = enabled;
-  passwordHasPassword.value = hasPassword;
-});
-
-setOnBindPasswordUpdate((success, error) => {
-  passwordUpdating.value = false;
-  if (success) {
-    appStore.showToast("密码配置已更新", "success");
-    showPasswordForm.value = false;
-    newPassword.value = "";
-    confirmPassword.value = "";
-    sendBindPasswordConfig();
-  } else {
-    appStore.showToast(error || "更新失败", "error");
-  }
-});
-
-function togglePasswordEnabled() {
-  passwordUpdating.value = true;
-  sendBindPasswordUpdate({ enabled: !passwordEnabled.value });
-}
-
-function savePassword() {
-  if (newPassword.value !== confirmPassword.value) {
-    appStore.showToast("两次密码不一致", "error");
-    return;
-  }
-  if (newPassword.value.length < 6) {
-    appStore.showToast("密码至少 6 位", "error");
-    return;
-  }
-  if (!/[a-zA-Z]/.test(newPassword.value) || !/\d/.test(newPassword.value)) {
-    appStore.showToast("密码必须包含字母和数字", "error");
-    return;
-  }
-  passwordUpdating.value = true;
-  sendBindPasswordUpdate({ password: newPassword.value });
-}
-
-function cancelPasswordForm() {
-  showPasswordForm.value = false;
-  newPassword.value = "";
-  confirmPassword.value = "";
-  showNewPassword.value = false;
-  showConfirmPassword.value = false;
-}
 
 function formatCountdown(s: number): string {
   const m = Math.floor(s / 60);
@@ -173,13 +142,10 @@ function cancelRemove() {
 
 onMounted(() => {
   requestBindList();
-  sendBindPasswordConfig();
 });
 
 onUnmounted(() => {
   setOnBindShareCreated(null);
-  setOnBindPasswordConfig(null);
-  setOnBindPasswordUpdate(null);
   if (_countdownTimer) {
     clearInterval(_countdownTimer);
     _countdownTimer = null;
@@ -190,7 +156,7 @@ onUnmounted(() => {
 <template>
   <div class="client-mgmt-view">
     <div class="view-header">
-      <h3>🔗 客户端管理</h3>
+      <h3>🔗 绑定配置</h3>
       <button class="btn-refresh" @click="requestBindList" title="刷新列表">🔄</button>
     </div>
 
@@ -228,22 +194,24 @@ onUnmounted(() => {
         <label class="toggle-switch">
           <input
             type="checkbox"
-            :checked="passwordEnabled"
-            @change="togglePasswordEnabled"
-            :disabled="passwordUpdating"
+            :checked="props.editConfig.binding.password_enabled"
+            @change="props.editConfig.binding.password_enabled = ($event.target as HTMLInputElement).checked"
           />
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <p class="password-hint">开启后，客户端可通过输入机器人密码完成绑定</p>
-      <div v-if="passwordEnabled" class="password-actions">
-        <button v-if="!showPasswordForm" class="btn-change-pwd" @click="showPasswordForm = true">
-          {{ passwordHasPassword ? '修改密码' : '设置密码' }}
-        </button>
+      <p class="password-hint">开启后，客户端可通过输入机器人密码完成绑定。修改后点击底部「应用配置」保存。</p>
+      <div v-if="props.editConfig.binding.password_enabled" class="password-actions">
+        <div v-if="!showPasswordForm" class="password-summary">
+          <button class="btn-change-pwd" @click="showPasswordForm = true">
+            修改密码
+          </button>
+          <span class="pwd-hint">点击「应用配置」后密码生效</span>
+        </div>
         <div v-else class="password-form">
           <div class="pwd-input-wrap">
             <input
-              v-model="newPassword"
+              v-model="editPassword"
               :type="showNewPassword ? 'text' : 'password'"
               class="pwd-input"
               placeholder="新密码（至少6位，字母+数字）"
@@ -270,13 +238,37 @@ onUnmounted(() => {
             >{{ showConfirmPassword ? '🙈' : '👁️' }}</button>
           </div>
           <div class="pwd-btn-group">
-            <button class="btn-save-pwd" @click="savePassword" :disabled="passwordUpdating">
-              {{ passwordUpdating ? '保存中...' : '保存' }}
+            <button class="btn-save-pwd" @click="props.editConfig.binding.password = editPassword; editPassword = ''; confirmPassword = ''; showPasswordForm = false; appStore.showToast('密码已填入配置，请点击底部「应用配置」保存', 'success')">
+              确认
             </button>
-            <button class="btn-cancel-pwd" @click="cancelPasswordForm" :disabled="passwordUpdating">
+            <button class="btn-cancel-pwd" @click="showPasswordForm = false; editPassword = ''; confirmPassword = ''">
               取消
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 绑定方式开关 -->
+    <div class="bind-methods-section">
+      <div class="bind-methods-header">
+        <span class="bind-methods-title">🔐 支持的绑定方式</span>
+      </div>
+      <p class="bind-methods-hint">控制客户端可以使用哪些方式进行绑定认证。关闭不想要的方式，客户端绑定界面将不再显示。</p>
+      <div class="methods-grid">
+        <div v-for="(enabled, method) in props.editConfig.binding.methods" :key="String(method)" class="method-card">
+          <div class="method-info">
+            <span class="method-icon">{{ METHOD_ICONS[String(method)] || "🔑" }}</span>
+            <span class="method-name">{{ METHOD_LABELS[String(method)] || String(method) }}</span>
+          </div>
+          <label class="toggle-switch">
+            <input
+              type="checkbox"
+              :checked="enabled"
+              @change="props.editConfig.binding.methods[String(method)] = ($event.target as HTMLInputElement).checked"
+            />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
       </div>
     </div>
@@ -542,6 +534,17 @@ h3 {
   margin-top: 12px;
 }
 
+.password-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pwd-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 .btn-change-pwd {
   padding: 6px 16px;
   background: var(--bg-tertiary);
@@ -686,6 +689,66 @@ h3 {
 .toggle-switch input:checked + .toggle-slider::before {
   transform: translateX(20px);
   background: #fff;
+}
+
+/* 绑定方式开关 */
+.bind-methods-section {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.bind-methods-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bind-methods-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bind-methods-hint {
+  margin: 6px 0 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.methods-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.method-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.method-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.method-icon {
+  font-size: 16px;
+}
+
+.method-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 .empty-list {

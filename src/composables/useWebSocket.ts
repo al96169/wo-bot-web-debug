@@ -659,6 +659,16 @@ export function useWebSocket() {
         break;
 
       // ---- 业务响应 ----
+      case "features_update": {
+        const features = data.features as string[] | undefined;
+        if (Array.isArray(features)) {
+          _remoteFeatures.value = features;
+          if (devicesStore.robotInfo) {
+            devicesStore.robotInfo.features = features;
+          }
+        }
+        break;
+      }
       case "status": {
         const batt = (data.battery ?? {}) as Record<string, unknown>;
         const sys = (data.system ?? {}) as Record<string, unknown>;
@@ -836,6 +846,28 @@ export function useWebSocket() {
           manual_override: Boolean(data.manual_override),
           simulated_battery: (data as any).simulated_battery != null ? Number((data as any).simulated_battery) : null,
         });
+        break;
+      case "config_get_ack":
+        // 机器人完整配置返回
+        if (data && typeof data === "object") {
+          robotStore.setRobotConfig(data as any);
+        }
+        break;
+      case "config_set_ack":
+        // 配置应用结果
+        if (data?.success) {
+          const changes = (data as any).changes as string[] || [];
+          const requiresReboot = (data as any).requires_reboot;
+          if (requiresReboot) {
+            appStore.showToast("配置已保存，需重启服务生效", "info");
+          } else {
+            appStore.showToast(`配置已应用 (${changes.length} 项变更)`, "success");
+          }
+          // 重新获取最新配置
+          _send({ type: "config_get", data: {} });
+        } else {
+          appStore.showToast("配置应用失败", "error");
+        }
         break;
       case "software_install_ack":
       case "software_uninstall_ack":
@@ -1025,8 +1057,8 @@ export function useWebSocket() {
       }
       case "error":
         console.warn(`[Signaling:error] ${String(data.message ?? "未知错误")}`);
-        // 503 表示可选服务不可用（如摄像头/Rosmaster），不弹 Toast
-        if (String(data.code ?? "") !== "503") {
+        // 503=可选服务不可用, 403=功能被管理员禁用，均不弹 Toast
+        if (String(data.code ?? "") !== "503" && String(data.code ?? "") !== "403") {
           appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error");
         }
         break;
@@ -1058,7 +1090,6 @@ export function useWebSocket() {
       // ---- 音乐播放 ----
       case "music_status": {
         if ((data as Record<string, unknown>).error) {
-          appStore.showToast(`音乐播放错误: ${String((data as Record<string, unknown>).error)}`, "error");
           robotStore.setMusicStatus({ ...robotStore.musicStatus, status: "stopped" });
         } else {
           robotStore.setMusicStatus(data as unknown as MusicStatus);

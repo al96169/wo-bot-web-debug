@@ -35,6 +35,8 @@ const {
 
 // 云台功能是否可用（服务端 features 包含 "gimbal"）
 const gimbalAvailable = computed(() => getRemoteFeatures().includes("gimbal"));
+// 喊话功能是否可用（服务端 features 包含 "voice_broadcast"）
+const voiceBroadcastAvailable = computed(() => getRemoteFeatures().includes("voice_broadcast"));
 
 // 喊话面板
 const broadcastRecording = ref(false);
@@ -1017,7 +1019,7 @@ onDeactivated(() => {
         </div>
 
         <!-- 喊话 -->
-        <div class="broadcast-row">
+        <div v-if="voiceBroadcastAvailable" class="broadcast-row">
           <div class="broadcast-row-inner">
             <button
               :class="['broadcast-btn', { recording: broadcastRecording }]"

@@ -8,6 +8,7 @@ import type {
   Module,
   MusicStatus,
   MusicTrack,
+  RobotConfig,
   ServiceInfo,
   Software,
   SoftwareTask,
@@ -188,6 +189,11 @@ export const useRobotStore = defineStore("robot", {
       manual_override: false,
       simulated_battery: null as number | null,
     },
+
+    /** 机器人配置 (R00033) */
+    robotConfig: null as RobotConfig | null,
+    /** 配置是否已加载 */
+    configLoaded: false as boolean,
   }),
 
   getters: {
@@ -489,6 +495,13 @@ export const useRobotStore = defineStore("robot", {
       simulated_battery?: number | null;
     }): void {
       this.powerPolicy = { ...this.powerPolicy, ...data };
+    },
+
+    /* ---- 机器人配置 (R00033) ---- */
+
+    setRobotConfig(config: RobotConfig): void {
+      this.robotConfig = config;
+      this.configLoaded = true;
     },
   },
 });

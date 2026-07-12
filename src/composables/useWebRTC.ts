@@ -784,8 +784,8 @@ export function useWebRTC() {
       }
       case "error":
         console.warn(`[Remote:error] ${String(data.message ?? "未知错误")}`);
-        // 503 表示可选服务不可用，不弹 Toast
-        if (String(data.code ?? "") !== "503") {
+        // 503=可选服务不可用, 403=功能被管理员禁用，均不弹 Toast
+        if (String(data.code ?? "") !== "503" && String(data.code ?? "") !== "403") {
           appStore.showToast(`错误: ${String(data.message ?? "未知错误")}`, "error");
         }
         break;
@@ -794,8 +794,6 @@ export function useWebRTC() {
       case "music_status": {
         console.log("[DC.msg] music_status:", JSON.stringify(data).slice(0, 200));
         if ((data as Record<string, unknown>).error) {
-          appStore.showToast(`音乐播放错误: ${String((data as Record<string, unknown>).error)}`, "error");
-          // 把 status 标为 stopped，保留其他字段防止面板空白
           robotStore.setMusicStatus({ ...robotStore.musicStatus, status: "stopped" });
         } else {
           robotStore.setMusicStatus(data as unknown as MusicStatus);
@@ -878,6 +876,13 @@ export function useWebRTC() {
         );
         break;
       }
+      case "config_get_ack":
+        if (data && typeof data === "object") {
+          robotStore.setRobotConfig(data as any);
+        }
+        break;
+      case "config_set_ack":
+        break;
       default:
         console.log("[DC.msg] unhandled:", msgType, JSON.stringify(data).slice(0, 200));
         break;
