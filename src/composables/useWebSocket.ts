@@ -608,6 +608,8 @@ export function useWebSocket() {
             clientToken: String(data.clientToken),
             deviceIp: ip,
             devicePort: port,
+            clientName: getClientName() || "",
+            boundAt: new Date().toISOString(),
           });
           isBound.value = true;
           appStore.showToast("已通过分享码自动绑定", "success");
@@ -773,11 +775,9 @@ export function useWebSocket() {
         const mode = String(data.mode ?? "tail");
         const mapped: LogEntry[] = rawLogs.map((l) => {
           const rawLevel = String(l.level ?? "info").toLowerCase();
-          const level = (rawLevel === "warning"
-            ? "warn"
-            : ["debug", "info", "warn", "error"].includes(rawLevel)
-              ? rawLevel
-              : "info") as LogEntry["level"];
+          const level = (
+            rawLevel === "warning" ? "warn" : ["debug", "info", "warn", "error"].includes(rawLevel) ? rawLevel : "info"
+          ) as LogEntry["level"];
           const timestamp = String(l.timestamp ?? l.time ?? "");
           const lineNo = Number(l.line_no ?? 0);
           return {
@@ -856,7 +856,7 @@ export function useWebSocket() {
       case "config_set_ack":
         // 配置应用结果
         if (data?.success) {
-          const changes = (data as any).changes as string[] || [];
+          const changes = ((data as any).changes as string[]) || [];
           const requiresReboot = (data as any).requires_reboot;
           if (requiresReboot) {
             appStore.showToast("配置已保存，需重启服务生效", "info");
@@ -1245,15 +1245,18 @@ export function useWebSocket() {
     _send({ type: "bind_list", data: {} }, true);
   }
   function sendBindRequest(requestToken: string, method: BindingMethod): void {
-    _send({
-      type: "bind_request",
-      data: {
-        requestToken,
-        clientId: getClientId(),
-        clientName: getClientName(),
-        method,
+    _send(
+      {
+        type: "bind_request",
+        data: {
+          requestToken,
+          clientId: getClientId(),
+          clientName: getClientName(),
+          method,
+        },
       },
-    }, true);
+      true,
+    );
   }
   function sendBindVerify(requestToken: string, randomCode: string): void {
     _send({ type: "bind_verify", data: { requestToken, randomCode } }, true);
@@ -1277,14 +1280,17 @@ export function useWebSocket() {
     _send({ type: "bind_share_create", data: {} }, true);
   }
   function sendBindShareUse(shareCode: string): void {
-    _send({
-      type: "bind_share_use",
-      data: {
-        shareCode,
-        clientId: getClientId(),
-        clientName: getClientName(),
+    _send(
+      {
+        type: "bind_share_use",
+        data: {
+          shareCode,
+          clientId: getClientId(),
+          clientName: getClientName(),
+        },
       },
-    }, true);
+      true,
+    );
   }
   function sendBindPassword(requestToken: string, password: string): void {
     _send({ type: "bind_password", data: { requestToken, password } }, true);

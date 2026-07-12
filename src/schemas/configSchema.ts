@@ -137,7 +137,10 @@ export const CONFIG_JSON_SCHEMA = {
       type: "object",
       required: ["drive_type"],
       properties: {
-        drive_type: { type: "string", enum: ["mecanum", "ackermann", "differential", "tracked", "biped", "self_balancing", "spider", "custom"] },
+        drive_type: {
+          type: "string",
+          enum: ["mecanum", "ackermann", "differential", "tracked", "biped", "self_balancing", "spider", "custom"],
+        },
         max_linear_speed: { type: "number", minimum: 0, maximum: 10 },
         max_angular_speed: { type: "number", minimum: 0, maximum: 10 },
         default_mode: { type: "string", enum: ["manual", "semi", "auto"] },

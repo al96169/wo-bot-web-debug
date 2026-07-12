@@ -4,12 +4,7 @@ import { useRobotStore } from "@/stores/robot";
 import { useAppStore } from "@/stores/app";
 import { useWebSocket } from "@/composables/useWebSocket";
 import ClientManagementView from "@/components/views/ClientManagementView.vue";
-import {
-  DEFAULT_CONFIG,
-  CORE_FEATURES,
-  FEATURE_LABELS,
-  DRIVE_TYPE_OPTIONS,
-} from "@/schemas/configSchema";
+import { DEFAULT_CONFIG, CORE_FEATURES, FEATURE_LABELS, DRIVE_TYPE_OPTIONS } from "@/schemas/configSchema";
 import type { RobotConfig } from "@/types";
 
 const robotStore = useRobotStore();
@@ -72,7 +67,10 @@ watch(
       if (_pendingApply.value) {
         _pendingApply.value = false;
         isApplying.value = false;
-        if (_applyTimeout) { clearTimeout(_applyTimeout); _applyTimeout = null; }
+        if (_applyTimeout) {
+          clearTimeout(_applyTimeout);
+          _applyTimeout = null;
+        }
         appStore.showToast("配置已应用", "success");
       }
     }
@@ -88,7 +86,9 @@ watch(simulateBatteryLevel, (val) => {
 
 function applyConfigToEdit(config: RobotConfig) {
   editConfig.value = safeMergeConfig(config);
-  nextTick(() => { jsonText.value = JSON.stringify(editConfig.value, null, 2); });
+  nextTick(() => {
+    jsonText.value = JSON.stringify(editConfig.value, null, 2);
+  });
 }
 
 function safeMergeConfig(config: RobotConfig): RobotConfig {
@@ -139,7 +139,9 @@ function handleApplyJson() {
     jsonError.value = "";
     jsonText.value = JSON.stringify(editConfig.value, null, 2);
     appStore.showToast("JSON 已回填到表单，请检查后点击「应用配置」保存", "success");
-  } catch { /* already validated */ }
+  } catch {
+    /* already validated */
+  }
 }
 
 // ---- 应用配置 ----
@@ -280,7 +282,14 @@ function setCameraName(index: number, name: string) {
           <p class="config-item-desc">机器人直线运动的最大速度，范围 0.1 - 10.0 m/s</p>
           <div class="slider-row">
             <input v-model.number="editConfig.motion.max_linear_speed" type="range" min="0.1" max="10" step="0.1" />
-            <input v-model.number="editConfig.motion.max_linear_speed" type="number" min="0.1" max="10" step="0.1" class="num-input" />
+            <input
+              v-model.number="editConfig.motion.max_linear_speed"
+              type="number"
+              min="0.1"
+              max="10"
+              step="0.1"
+              class="num-input"
+            />
           </div>
         </div>
         <div class="config-item">
@@ -291,7 +300,14 @@ function setCameraName(index: number, name: string) {
           <p class="config-item-desc">机器人旋转运动的最大速度，范围 0.1 - 10.0 rad/s</p>
           <div class="slider-row">
             <input v-model.number="editConfig.motion.max_angular_speed" type="range" min="0.1" max="10" step="0.1" />
-            <input v-model.number="editConfig.motion.max_angular_speed" type="number" min="0.1" max="10" step="0.1" class="num-input" />
+            <input
+              v-model.number="editConfig.motion.max_angular_speed"
+              type="number"
+              min="0.1"
+              max="10"
+              step="0.1"
+              class="num-input"
+            />
           </div>
         </div>
         <div class="config-item">
@@ -313,7 +329,7 @@ function setCameraName(index: number, name: string) {
           <div class="config-item-header">
             <label>启用摄像头</label>
             <label class="toggle-switch">
-              <input type="checkbox" v-model="editConfig.camera.enabled" />
+              <input v-model="editConfig.camera.enabled" type="checkbox" />
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -330,33 +346,85 @@ function setCameraName(index: number, name: string) {
           <div class="config-item-header"><label>摄像头重命名</label></div>
           <div class="rename-row">
             <label class="rename-label">摄像头 0:</label>
-            <input :value="getCameraName(0)" @input="setCameraName(0, ($event.target as HTMLInputElement).value)" class="config-input" placeholder="前方摄像头" />
+            <input
+              :value="getCameraName(0)"
+              class="config-input"
+              placeholder="前方摄像头"
+              @input="setCameraName(0, ($event.target as HTMLInputElement).value)"
+            />
           </div>
           <div class="rename-row">
             <label class="rename-label">摄像头 1:</label>
-            <input :value="getCameraName(1)" @input="setCameraName(1, ($event.target as HTMLInputElement).value)" class="config-input" placeholder="后方摄像头" />
+            <input
+              :value="getCameraName(1)"
+              class="config-input"
+              placeholder="后方摄像头"
+              @input="setCameraName(1, ($event.target as HTMLInputElement).value)"
+            />
           </div>
         </div>
         <div class="config-item">
           <div class="config-item-header"><label>云台绑定</label></div>
           <p class="config-item-desc">摄像头图像是否跟随云台转动。</p>
-          <div class="toggle-row"><span>水平绑定（Pan）</span><label class="toggle-switch"><input type="checkbox" v-model="editConfig.camera.gimbal_pan_bind" /><span class="toggle-slider"></span></label></div>
-          <div class="toggle-row"><span>俯仰绑定（Tilt）</span><label class="toggle-switch"><input type="checkbox" v-model="editConfig.camera.gimbal_tilt_bind" /><span class="toggle-slider"></span></label></div>
+          <div class="toggle-row">
+            <span>水平绑定（Pan）</span
+            ><label class="toggle-switch"
+              ><input v-model="editConfig.camera.gimbal_pan_bind" type="checkbox" /><span class="toggle-slider"></span
+            ></label>
+          </div>
+          <div class="toggle-row">
+            <span>俯仰绑定（Tilt）</span
+            ><label class="toggle-switch"
+              ><input v-model="editConfig.camera.gimbal_tilt_bind" type="checkbox" /><span class="toggle-slider"></span
+            ></label>
+          </div>
         </div>
         <div class="config-item">
           <div class="config-item-header"><label>画面方向反转</label></div>
           <p class="config-item-desc">画面镜像翻转配置。</p>
-          <div class="toggle-row"><span>水平翻转（镜像）</span><label class="toggle-switch"><input type="checkbox" v-model="editConfig.camera.flip_horizontal" /><span class="toggle-slider"></span></label></div>
-          <div class="toggle-row"><span>垂直翻转（倒置）</span><label class="toggle-switch"><input type="checkbox" v-model="editConfig.camera.flip_vertical" /><span class="toggle-slider"></span></label></div>
+          <div class="toggle-row">
+            <span>水平翻转（镜像）</span
+            ><label class="toggle-switch"
+              ><input v-model="editConfig.camera.flip_horizontal" type="checkbox" /><span class="toggle-slider"></span
+            ></label>
+          </div>
+          <div class="toggle-row">
+            <span>垂直翻转（倒置）</span
+            ><label class="toggle-switch"
+              ><input v-model="editConfig.camera.flip_vertical" type="checkbox" /><span class="toggle-slider"></span
+            ></label>
+          </div>
         </div>
         <div class="config-item">
           <div class="config-item-header">
             <label>分辨率</label>
-            <span class="config-item-value">{{ editConfig.camera.resolution.width }} × {{ editConfig.camera.resolution.height }}</span>
+            <span class="config-item-value"
+              >{{ editConfig.camera.resolution.width }} × {{ editConfig.camera.resolution.height }}</span
+            >
           </div>
           <div class="res-row">
-            <div class="res-field"><label>宽度</label><input v-model.number="editConfig.camera.resolution.width" type="number" min="160" max="3840" step="16" class="num-input" /></div>
-            <div class="res-field"><label>高度</label><input v-model.number="editConfig.camera.resolution.height" type="number" min="120" max="2160" step="16" class="num-input" /></div>
+            <div class="res-field">
+              <label>宽度</label
+              ><input
+                v-model.number="editConfig.camera.resolution.width"
+                type="number"
+                min="160"
+                max="3840"
+                step="16"
+                class="num-input"
+              />
+            </div>
+            <div class="res-field">
+              <label>高度</label
+              ><input
+                v-model.number="editConfig.camera.resolution.height"
+                type="number"
+                min="120"
+                max="2160"
+                step="16"
+                class="num-input"
+              />
+            </div>
           </div>
         </div>
         <div class="config-item">
@@ -378,31 +446,50 @@ function setCameraName(index: number, name: string) {
         </div>
 
         <!-- 云台配置（摄像头面板内） -->
-        <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border);">
+        <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border)">
           <h3>🎯 云台配置</h3>
           <div class="config-item">
             <div class="config-item-header">
               <label>启用云台</label>
-              <label class="toggle-switch"><input type="checkbox" v-model="editConfig.gimbal.enabled" /><span class="toggle-slider"></span></label>
+              <label class="toggle-switch"
+                ><input v-model="editConfig.gimbal.enabled" type="checkbox" /><span class="toggle-slider"></span
+              ></label>
             </div>
           </div>
-          <div class="config-item" v-if="editConfig.gimbal.enabled">
+          <div v-if="editConfig.gimbal.enabled" class="config-item">
             <div class="config-item-header"><label>云台类型</label></div>
             <input v-model="editConfig.gimbal.gimbal_type" class="config-input" />
           </div>
-          <div class="config-item" v-if="editConfig.gimbal.enabled">
+          <div v-if="editConfig.gimbal.enabled" class="config-item">
             <div class="config-item-header"><label>方向反转</label></div>
-            <div class="toggle-row"><span>水平反转（Pan Invert）</span><label class="toggle-switch"><input type="checkbox" v-model="editConfig.gimbal.pan_invert" /><span class="toggle-slider"></span></label></div>
-            <div class="toggle-row"><span>垂直反转（Tilt Invert）</span><label class="toggle-switch"><input type="checkbox" v-model="editConfig.gimbal.tilt_invert" /><span class="toggle-slider"></span></label></div>
+            <div class="toggle-row">
+              <span>水平反转（Pan Invert）</span
+              ><label class="toggle-switch"
+                ><input v-model="editConfig.gimbal.pan_invert" type="checkbox" /><span class="toggle-slider"></span
+              ></label>
+            </div>
+            <div class="toggle-row">
+              <span>垂直反转（Tilt Invert）</span
+              ><label class="toggle-switch"
+                ><input v-model="editConfig.gimbal.tilt_invert" type="checkbox" /><span class="toggle-slider"></span
+              ></label>
+            </div>
           </div>
-          <div class="config-item" v-if="editConfig.gimbal.enabled">
+          <div v-if="editConfig.gimbal.enabled" class="config-item">
             <div class="config-item-header">
               <label>步进角度</label>
               <span class="config-item-value">{{ editConfig.gimbal.step }}°</span>
             </div>
             <div class="slider-row">
               <input v-model.number="editConfig.gimbal.step" type="range" min="0.1" max="30" step="0.1" />
-              <input v-model.number="editConfig.gimbal.step" type="number" min="0.1" max="30" step="0.1" class="num-input" />
+              <input
+                v-model.number="editConfig.gimbal.step"
+                type="number"
+                min="0.1"
+                max="30"
+                step="0.1"
+                class="num-input"
+              />
             </div>
           </div>
         </div>
@@ -417,15 +504,24 @@ function setCameraName(index: number, name: string) {
         <h3>🌐 网络配置</h3>
         <div class="config-item">
           <div class="config-item-header"><label>对外公告 IP</label></div>
-          <p class="config-item-desc">设置机器人在内网的固定 IP 地址，用于 WebRTC SDP 和客户端直连。修改后需重启服务才能生效。</p>
+          <p class="config-item-desc">
+            设置机器人在内网的固定 IP 地址，用于 WebRTC SDP 和客户端直连。修改后需重启服务才能生效。
+          </p>
           <input v-model="editConfig.server.advertised_ip" class="config-input" placeholder="例如: 192.168.1.100" />
-          <p v-if="editConfig.server.advertised_ip !== (robotStore.robotConfig?.server?.advertised_ip ?? '')" class="reboot-warning">⚠️ 修改此配置需要重启服务才能生效</p>
+          <p
+            v-if="editConfig.server.advertised_ip !== (robotStore.robotConfig?.server?.advertised_ip ?? '')"
+            class="reboot-warning"
+          >
+            ⚠️ 修改此配置需要重启服务才能生效
+          </p>
         </div>
         <div class="config-item">
           <div class="config-item-header"><label>WebSocket 端口</label></div>
           <p class="config-item-desc">WebSocket 信令服务器端口。修改后需重启服务才能生效。</p>
           <input v-model.number="editConfig.server.port" type="number" min="1" max="65535" class="num-input" />
-          <p v-if="editConfig.server.port !== (robotStore.robotConfig?.server?.port ?? 8765)" class="reboot-warning">⚠️ 修改此配置需要重启服务才能生效</p>
+          <p v-if="editConfig.server.port !== (robotStore.robotConfig?.server?.port ?? 8765)" class="reboot-warning">
+            ⚠️ 修改此配置需要重启服务才能生效
+          </p>
         </div>
       </div>
     </div>
@@ -449,12 +545,18 @@ function setCameraName(index: number, name: string) {
         <div class="config-item">
           <div class="config-item-header">
             <label>当前省电模式</label>
-            <span class="mode-badge" :class="robotStore.powerPolicy.mode"> {{ robotStore.powerPolicy.mode === "eco" ? "⚡ 省电模式" : "✅ 正常模式" }} </span>
+            <span class="mode-badge" :class="robotStore.powerPolicy.mode">
+              {{ robotStore.powerPolicy.mode === "eco" ? "⚡ 省电模式" : "✅ 正常模式" }}
+            </span>
           </div>
-          <p v-if="robotStore.powerPolicy.mode === 'eco'" class="config-item-desc">省电模式下，跳舞功能不可用，音乐音量限制为 50% 以下。</p>
-          <p v-if="robotStore.powerPolicy.manual_override" class="config-item-desc">已触发手动豁免，本次会话不再自动进入省电模式。</p>
+          <p v-if="robotStore.powerPolicy.mode === 'eco'" class="config-item-desc">
+            省电模式下，跳舞功能不可用，音乐音量限制为 50% 以下。
+          </p>
+          <p v-if="robotStore.powerPolicy.manual_override" class="config-item-desc">
+            已触发手动豁免，本次会话不再自动进入省电模式。
+          </p>
         </div>
-        <p class="section-desc" style="margin-top: 12px;">💡 修改阀值后，点击底部「应用配置」按钮即可保存。</p>
+        <p class="section-desc" style="margin-top: 12px">💡 修改阀值后，点击底部「应用配置」按钮即可保存。</p>
       </div>
     </div>
 
@@ -468,7 +570,13 @@ function setCameraName(index: number, name: string) {
           <button class="btn-json-action" @click="formatJson">✨ 格式化</button>
           <button class="btn-json-action btn-json-primary" @click="handleApplyJson">📋 应用 JSON</button>
         </div>
-        <textarea v-model="jsonText" class="json-editor" :class="{ error: !!jsonError }" spellcheck="false" placeholder="在此编辑 JSON 配置..."></textarea>
+        <textarea
+          v-model="jsonText"
+          class="json-editor"
+          :class="{ error: !!jsonError }"
+          spellcheck="false"
+          placeholder="在此编辑 JSON 配置..."
+        ></textarea>
         <p v-if="jsonError" class="json-error-msg">{{ jsonError }}</p>
       </div>
     </div>
@@ -479,23 +587,36 @@ function setCameraName(index: number, name: string) {
         <h3>🧪 调试工具</h3>
         <div class="debug-section">
           <h4>模拟低电量测试</h4>
-          <p class="config-item-desc">设置一个低于省电阀值的模拟电量，可立即测试自动进入省电模式。模拟期间不影响真实电量采集。</p>
+          <p class="config-item-desc">
+            设置一个低于省电阀值的模拟电量，可立即测试自动进入省电模式。模拟期间不影响真实电量采集。
+          </p>
           <div class="simulate-row">
-            <input v-model.number="simulateBatteryLevel" type="range" min="5" max="95" step="1" class="simulate-slider" />
+            <input
+              v-model.number="simulateBatteryLevel"
+              type="range"
+              min="5"
+              max="95"
+              step="1"
+              class="simulate-slider"
+            />
             <span class="simulate-value">{{ simulateBatteryLevel }}%</span>
           </div>
           <div class="simulate-actions">
-            <button class="btn-simulate" @click="handleSimulate">{{ isSimulating ? "🔄 更新模拟值" : "🧪 模拟此电量" }}</button>
+            <button class="btn-simulate" @click="handleSimulate">
+              {{ isSimulating ? "🔄 更新模拟值" : "🧪 模拟此电量" }}
+            </button>
             <button v-if="isSimulating" class="btn-clear-sim" @click="handleClearSimulation">↩️ 恢复真实电量</button>
           </div>
-          <p v-if="isSimulating" class="simulate-active-tip">⚠️ 当前为模拟电量 {{ simulateBatteryLevel }}%，真实电量采集不受影响。</p>
+          <p v-if="isSimulating" class="simulate-active-tip">
+            ⚠️ 当前为模拟电量 {{ simulateBatteryLevel }}%，真实电量采集不受影响。
+          </p>
         </div>
       </div>
     </div>
 
     <!-- ==================== 绑定配置 ==================== -->
     <div v-show="activeTab === 'clients'" class="config-panel">
-      <ClientManagementView :editConfig="editConfig" />
+      <ClientManagementView :edit-config="editConfig" />
     </div>
 
     <!-- ==================== 底部应用配置按钮（固定在底部） ==================== -->
@@ -503,104 +624,505 @@ function setCameraName(index: number, name: string) {
       <button class="btn-apply" :disabled="isApplying || !hasConfigChanged()" @click="handleApplyConfig">
         {{ isApplying ? "应用中..." : "💾 应用配置" }}
       </button>
-      <span v-if="!hasConfigChanged() && robotStore.configLoaded && !isApplying" class="no-change-hint">✓ 配置未变更</span>
+      <span v-if="!hasConfigChanged() && robotStore.configLoaded && !isApplying" class="no-change-hint"
+        >✓ 配置未变更</span
+      >
     </div>
   </div>
 </template>
 
 <style scoped>
-.view { display: none; }
-.view.active { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
-h2 { margin-bottom: 16px; font-size: 22px; }
+.view {
+  display: none;
+}
+.view.active {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+h2 {
+  margin-bottom: 16px;
+  font-size: 22px;
+}
 
-.config-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 0; flex-wrap: wrap; }
-.config-tab { padding: 8px 12px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; }
-.config-tab:hover { color: var(--text-primary); }
-.config-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.config-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+  flex-wrap: wrap;
+}
+.config-tab {
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.config-tab:hover {
+  color: var(--text-primary);
+}
+.config-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
 
-.config-panel { flex: 1; overflow-y: auto; }
-.config-section { max-width: 620px; }
-.config-section h3 { font-size: 16px; margin-bottom: 8px; }
-.section-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+.config-panel {
+  flex: 1;
+  overflow-y: auto;
+}
+.config-section {
+  max-width: 620px;
+}
+.config-section h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+.section-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
 
-.config-item { padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 12px; }
-.config-item-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.config-item-header label { font-weight: 600; font-size: 14px; }
-.config-item-value { font-size: 16px; font-weight: 700; color: var(--accent); }
-.eco-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,193,7,0.2); color: #ffc107; }
-.mode-badge { font-size: 12px; padding: 2px 10px; border-radius: 10px; }
-.mode-badge.normal { background: rgba(0,255,136,0.15); color: var(--success); }
-.mode-badge.eco { background: rgba(255,193,7,0.15); color: #ffc107; }
-.config-item-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 8px; }
+.config-item {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+}
+.config-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.config-item-header label {
+  font-weight: 600;
+  font-size: 14px;
+}
+.config-item-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.eco-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+}
+.mode-badge {
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 10px;
+}
+.mode-badge.normal {
+  background: rgba(0, 255, 136, 0.15);
+  color: var(--success);
+}
+.mode-badge.eco {
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+}
+.config-item-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
 
-.features-grid { display: flex; flex-direction: column; gap: 8px; }
-.feature-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); transition: opacity 0.2s; }
-.feature-item.disabled { opacity: 0.5; }
-.feature-info { display: flex; flex-direction: column; gap: 2px; }
-.feature-name { font-size: 14px; font-weight: 500; }
-.feature-key { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+.features-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.feature-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: opacity 0.2s;
+}
+.feature-item.disabled {
+  opacity: 0.5;
+}
+.feature-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.feature-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.feature-key {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+}
 
-.toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-tertiary); border-radius: 24px; transition: 0.3s; border: 1px solid var(--border); }
-.toggle-slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 2px; bottom: 2px; background: var(--text-secondary); border-radius: 50%; transition: 0.3s; }
-.toggle-switch input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
-.toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); background: #000; }
-.toggle-switch.locked { opacity: 0.4; pointer-events: none; }
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-tertiary);
+  border-radius: 24px;
+  transition: 0.3s;
+  border: 1px solid var(--border);
+}
+.toggle-slider:before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  bottom: 2px;
+  background: var(--text-secondary);
+  border-radius: 50%;
+  transition: 0.3s;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(20px);
+  background: #000;
+}
+.toggle-switch.locked {
+  opacity: 0.4;
+  pointer-events: none;
+}
 
-.config-select { width: 100%; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; cursor: pointer; }
-.config-select:focus { outline: none; border-color: var(--accent); }
-.config-input { width: 100%; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; box-sizing: border-box; }
-.config-input:focus { outline: none; border-color: var(--accent); }
-.slider-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-.slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
-.num-input { width: 80px; padding: 6px 8px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-size: 13px; text-align: center; }
-.num-input:focus { outline: none; border-color: var(--accent); }
-.toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 13px; }
-.rename-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-.rename-label { font-size: 13px; color: var(--text-muted); min-width: 70px; }
-.res-row { display: flex; gap: 16px; margin-top: 8px; }
-.res-field { display: flex; flex-direction: column; gap: 4px; }
-.res-field label { font-size: 12px; color: var(--text-muted); }
-.res-field .num-input { width: 100px; }
-.camera-tip { margin-top: 16px; font-size: 12px; color: var(--text-muted); font-style: italic; }
-.reboot-warning { margin-top: 8px; font-size: 12px; color: #ffc107; }
+.config-select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+.config-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.config-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.config-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.slider-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.num-input {
+  width: 80px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: center;
+}
+.num-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 13px;
+}
+.rename-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.rename-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  min-width: 70px;
+}
+.res-row {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+.res-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.res-field label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.res-field .num-input {
+  width: 100px;
+}
+.camera-tip {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.reboot-warning {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #ffc107;
+}
 
-.json-toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.btn-json-action { padding: 6px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: all 0.2s; }
-.btn-json-action:hover { color: var(--text-primary); border-color: var(--accent); }
-.btn-json-primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
-.btn-json-primary:hover { opacity: 0.85; color: #000; }
-.json-editor { width: 100%; min-height: 400px; padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-family: "SF Mono","Fira Code","Consolas",monospace; font-size: 13px; line-height: 1.6; resize: vertical; tab-size: 2; box-sizing: border-box; }
-.json-editor:focus { outline: none; border-color: var(--accent); }
-.json-editor.error { border-color: var(--danger); }
-.json-error-msg { font-size: 12px; color: var(--danger); font-family: monospace; margin-top: 4px; }
+.json-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.btn-json-action {
+  padding: 6px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-json-action:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+.btn-json-primary {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.btn-json-primary:hover {
+  opacity: 0.85;
+  color: #000;
+}
+.json-editor {
+  width: 100%;
+  min-height: 400px;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  tab-size: 2;
+  box-sizing: border-box;
+}
+.json-editor:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.json-editor.error {
+  border-color: var(--danger);
+}
+.json-error-msg {
+  font-size: 12px;
+  color: var(--danger);
+  font-family: monospace;
+  margin-top: 4px;
+}
 
-.apply-bar { position: sticky; bottom: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--bg-secondary); border-top: 1px solid var(--border); margin-top: auto; z-index: 10; }
-.btn-apply { padding: 10px 28px; background: var(--accent); color: #000; border: none; border-radius: var(--radius-md); font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
-.btn-apply:hover:not(:disabled) { opacity: 0.85; }
-.btn-apply:disabled { opacity: 0.4; cursor: not-allowed; }
-.no-change-hint { font-size: 12px; color: var(--text-muted); }
+.apply-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+  z-index: 10;
+}
+.btn-apply {
+  padding: 10px 28px;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-apply:hover:not(:disabled) {
+  opacity: 0.85;
+}
+.btn-apply:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.no-change-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
 
-.threshold-slider { margin-top: 12px; }
-.threshold-slider input[type="range"] { width: 100%; accent-color: var(--accent); }
-.threshold-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.threshold-slider {
+  margin-top: 12px;
+}
+.threshold-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.threshold-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
 
-.config-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
-.btn-save { padding: 10px 24px; background: var(--accent); color: #000; border: none; border-radius: var(--radius-md); font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
-.btn-save:hover:not(:disabled) { opacity: 0.85; }
-.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.config-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.btn-save {
+  padding: 10px 24px;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-save:hover:not(:disabled) {
+  opacity: 0.85;
+}
+.btn-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
-.debug-section { padding: 16px; background: var(--bg-card); border: 1px dashed rgba(255,193,7,0.4); border-radius: var(--radius-md); }
-.debug-section h4 { margin: 0 0 4px 0; font-size: 14px; }
-.simulate-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
-.simulate-slider { flex: 1; accent-color: #ffc107; }
-.simulate-value { font-size: 18px; font-weight: 700; color: #ffc107; min-width: 44px; text-align: right; }
-.simulate-actions { display: flex; gap: 10px; margin-top: 12px; }
-.btn-simulate { padding: 8px 18px; background: #ffc107; color: #000; border: none; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
-.btn-simulate:hover:not(:disabled) { opacity: 0.8; }
-.btn-simulate:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-clear-sim { padding: 8px 18px; background: none; color: var(--text-muted); border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 13px; cursor: pointer; transition: all 0.2s; }
-.btn-clear-sim:hover { color: var(--danger); border-color: var(--danger); }
-.simulate-active-tip { margin-top: 10px; font-size: 12px; color: #ffc107; }
+.debug-section {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px dashed rgba(255, 193, 7, 0.4);
+  border-radius: var(--radius-md);
+}
+.debug-section h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+}
+.simulate-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.simulate-slider {
+  flex: 1;
+  accent-color: #ffc107;
+}
+.simulate-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffc107;
+  min-width: 44px;
+  text-align: right;
+}
+.simulate-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.btn-simulate {
+  padding: 8px 18px;
+  background: #ffc107;
+  color: #000;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-simulate:hover:not(:disabled) {
+  opacity: 0.8;
+}
+.btn-simulate:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-clear-sim {
+  padding: 8px 18px;
+  background: none;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-clear-sim:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.simulate-active-tip {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #ffc107;
+}
 </style>

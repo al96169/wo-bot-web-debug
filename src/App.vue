@@ -3,7 +3,16 @@ import { ref, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
-import { useWebSocket, getRemoteFeatures, setOnVersionMismatch, setOnReconnect, setOnAuthRequired, authRequired, setPendingShareCode, getStoredBinding } from "@/composables/useWebSocket";
+import {
+  useWebSocket,
+  getRemoteFeatures,
+  setOnVersionMismatch,
+  setOnReconnect,
+  setOnAuthRequired,
+  authRequired,
+  setPendingShareCode,
+  getStoredBinding,
+} from "@/composables/useWebSocket";
 import { useWebRTC } from "@/composables/useWebRTC";
 import { useMock } from "@/composables/useMock";
 import { useDiscovery } from "@/composables/useDiscovery";
@@ -469,7 +478,7 @@ const viewsMap: Record<ViewName, unknown> = {
           <!-- 绑定认证浮窗（覆盖层） -->
           <div v-if="authRequired" class="bind-overlay">
             <div class="bind-modal">
-              <button class="bind-close-btn" @click="closeBindPanel" title="关闭并断开连接">×</button>
+              <button class="bind-close-btn" title="关闭并断开连接" @click="closeBindPanel">×</button>
               <BindView :auth-data="authRequiredData" />
             </div>
           </div>

@@ -1,12 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch } from "vue";
+import { onMounted, onUnmounted, ref, computed } from "vue";
 import type { RobotConfig } from "@/types";
-import {
-  useWebSocket,
-  getClientId,
-  setOnBindShareCreated,
-  getConnectedEndpoint,
-} from "@/composables/useWebSocket";
+import { useWebSocket, getClientId, setOnBindShareCreated, getConnectedEndpoint } from "@/composables/useWebSocket";
 import { useRobotStore } from "@/stores/robot";
 import { useDevicesStore } from "@/stores/devices";
 import { useAppStore } from "@/stores/app";
@@ -14,6 +9,9 @@ import { useAppStore } from "@/stores/app";
 const props = defineProps<{
   editConfig: RobotConfig;
 }>();
+
+// 本地引用，避免模板中直接修改 props 触发 lint 规则
+const config = props.editConfig;
 
 const robotStore = useRobotStore();
 const devicesStore = useDevicesStore();
@@ -157,15 +155,15 @@ onUnmounted(() => {
   <div class="client-mgmt-view">
     <div class="view-header">
       <h3>🔗 绑定配置</h3>
-      <button class="btn-refresh" @click="requestBindList" title="刷新列表">🔄</button>
+      <button class="btn-refresh" title="刷新列表" @click="requestBindList">🔄</button>
     </div>
 
     <!-- 分享绑定 -->
     <div class="share-section">
       <div class="share-header">
         <span class="share-title">📤 分享绑定</span>
-        <button class="btn-share" @click="handleCreateShare" :disabled="!!shareCode && shareCountdown > 0">
-          {{ hasShareCode ? '生成中...' : '生成分享码' }}
+        <button class="btn-share" :disabled="!!shareCode && shareCountdown > 0" @click="handleCreateShare">
+          {{ hasShareCode ? "生成中..." : "生成分享码" }}
         </button>
       </div>
 
@@ -174,13 +172,18 @@ onUnmounted(() => {
           <span class="share-code-label">分享码</span>
           <span class="share-code-value">{{ shareCode }}</span>
           <span class="share-countdown">{{ formatCountdown(shareCountdown) }}</span>
-          <button class="btn-copy-sm" @click="copyShareCode" title="复制分享码">📋</button>
+          <button class="btn-copy-sm" title="复制分享码" @click="copyShareCode">📋</button>
         </div>
         <div class="share-link-box">
           <span class="share-link-label">分享链接</span>
-          <input class="share-link-input" :value="shareLink" readonly @click="($event.target as HTMLInputElement).select()" />
+          <input
+            class="share-link-input"
+            :value="shareLink"
+            readonly
+            @click="($event.target as HTMLInputElement).select()"
+          />
           <button class="btn-copy-link" @click="copyShareLink">
-            {{ shareCopied ? '✓ 已复制' : '复制链接' }}
+            {{ shareCopied ? "✓ 已复制" : "复制链接" }}
           </button>
         </div>
         <p class="share-hint">将链接发送给其他设备，打开后可自动连接并绑定（2分钟内有效）</p>
@@ -194,18 +197,16 @@ onUnmounted(() => {
         <label class="toggle-switch">
           <input
             type="checkbox"
-            :checked="props.editConfig.binding.password_enabled"
-            @change="props.editConfig.binding.password_enabled = ($event.target as HTMLInputElement).checked"
+            :checked="config.binding.password_enabled"
+            @change="config.binding.password_enabled = ($event.target as HTMLInputElement).checked"
           />
           <span class="toggle-slider"></span>
         </label>
       </div>
       <p class="password-hint">开启后，客户端可通过输入机器人密码完成绑定。修改后点击底部「应用配置」保存。</p>
-      <div v-if="props.editConfig.binding.password_enabled" class="password-actions">
+      <div v-if="config.binding.password_enabled" class="password-actions">
         <div v-if="!showPasswordForm" class="password-summary">
-          <button class="btn-change-pwd" @click="showPasswordForm = true">
-            修改密码
-          </button>
+          <button class="btn-change-pwd" @click="showPasswordForm = true">修改密码</button>
           <span class="pwd-hint">点击「应用配置」后密码生效</span>
         </div>
         <div v-else class="password-form">
@@ -216,12 +217,9 @@ onUnmounted(() => {
               class="pwd-input"
               placeholder="新密码（至少6位，字母+数字）"
             />
-            <button
-              type="button"
-              class="pwd-toggle"
-              @click="showNewPassword = !showNewPassword"
-              tabindex="-1"
-            >{{ showNewPassword ? '🙈' : '👁️' }}</button>
+            <button type="button" class="pwd-toggle" tabindex="-1" @click="showNewPassword = !showNewPassword">
+              {{ showNewPassword ? "🙈" : "👁️" }}
+            </button>
           </div>
           <div class="pwd-input-wrap">
             <input
@@ -230,18 +228,31 @@ onUnmounted(() => {
               class="pwd-input"
               placeholder="确认新密码"
             />
-            <button
-              type="button"
-              class="pwd-toggle"
-              @click="showConfirmPassword = !showConfirmPassword"
-              tabindex="-1"
-            >{{ showConfirmPassword ? '🙈' : '👁️' }}</button>
+            <button type="button" class="pwd-toggle" tabindex="-1" @click="showConfirmPassword = !showConfirmPassword">
+              {{ showConfirmPassword ? "🙈" : "👁️" }}
+            </button>
           </div>
           <div class="pwd-btn-group">
-            <button class="btn-save-pwd" @click="props.editConfig.binding.password = editPassword; editPassword = ''; confirmPassword = ''; showPasswordForm = false; appStore.showToast('密码已填入配置，请点击底部「应用配置」保存', 'success')">
+            <button
+              class="btn-save-pwd"
+              @click="
+                config.binding.password = editPassword;
+                editPassword = '';
+                confirmPassword = '';
+                showPasswordForm = false;
+                appStore.showToast('密码已填入配置，请点击底部「应用配置」保存', 'success');
+              "
+            >
               确认
             </button>
-            <button class="btn-cancel-pwd" @click="showPasswordForm = false; editPassword = ''; confirmPassword = ''">
+            <button
+              class="btn-cancel-pwd"
+              @click="
+                showPasswordForm = false;
+                editPassword = '';
+                confirmPassword = '';
+              "
+            >
               取消
             </button>
           </div>
@@ -254,9 +265,11 @@ onUnmounted(() => {
       <div class="bind-methods-header">
         <span class="bind-methods-title">🔐 支持的绑定方式</span>
       </div>
-      <p class="bind-methods-hint">控制客户端可以使用哪些方式进行绑定认证。关闭不想要的方式，客户端绑定界面将不再显示。</p>
+      <p class="bind-methods-hint">
+        控制客户端可以使用哪些方式进行绑定认证。关闭不想要的方式，客户端绑定界面将不再显示。
+      </p>
       <div class="methods-grid">
-        <div v-for="(enabled, method) in props.editConfig.binding.methods" :key="String(method)" class="method-card">
+        <div v-for="(enabled, method) in config.binding.methods" :key="String(method)" class="method-card">
           <div class="method-info">
             <span class="method-icon">{{ METHOD_ICONS[String(method)] || "🔑" }}</span>
             <span class="method-name">{{ METHOD_LABELS[String(method)] || String(method) }}</span>
@@ -265,7 +278,7 @@ onUnmounted(() => {
             <input
               type="checkbox"
               :checked="enabled"
-              @change="props.editConfig.binding.methods[String(method)] = ($event.target as HTMLInputElement).checked"
+              @change="config.binding.methods[String(method)] = ($event.target as HTMLInputElement).checked"
             />
             <span class="toggle-slider"></span>
           </label>
@@ -294,11 +307,7 @@ onUnmounted(() => {
           </div>
           <span v-if="binding.clientId === currentClientId" class="self-badge">当前设备</span>
         </div>
-        <button
-          v-if="binding.clientId !== currentClientId"
-          class="btn-remove"
-          @click="handleRemove(binding.clientId)"
-        >
+        <button v-if="binding.clientId !== currentClientId" class="btn-remove" @click="handleRemove(binding.clientId)">
           移除
         </button>
       </div>

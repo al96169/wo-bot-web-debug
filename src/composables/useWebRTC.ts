@@ -535,7 +535,7 @@ export function useWebRTC() {
         "iceState:",
         peerConnection.iceConnectionState,
       );
-    } catch (e) {
+    } catch {
       webrtcState.value = "failed";
     } finally {
       _establishing = false;
@@ -605,11 +605,9 @@ export function useWebRTC() {
         const mode = String(data.mode ?? "tail");
         const mapped: LogEntry[] = rawLogs.map((l) => {
           const rawLevel = String(l.level ?? "info").toLowerCase();
-          const level = (rawLevel === "warning"
-            ? "warn"
-            : ["debug", "info", "warn", "error"].includes(rawLevel)
-              ? rawLevel
-              : "info") as LogEntry["level"];
+          const level = (
+            rawLevel === "warning" ? "warn" : ["debug", "info", "warn", "error"].includes(rawLevel) ? rawLevel : "info"
+          ) as LogEntry["level"];
           const timestamp = String(l.timestamp ?? l.time ?? "");
           const lineNo = Number(l.line_no ?? 0);
           return {

@@ -10,13 +10,9 @@ const { requestSoftwareList, requestSoftwareAvailable, sendSoftwareAction } = us
 const rootEl = ref<HTMLElement | null>(null);
 const activeTab = ref<"installed" | "available" | "tasks">("installed");
 
-const runningTaskCount = computed(
-  () => robotStore.softwareTasks.filter((t) => t.status === "running").length,
-);
+const runningTaskCount = computed(() => robotStore.softwareTasks.filter((t) => t.status === "running").length);
 
-const sortedTasks = computed(() =>
-  [...robotStore.softwareTasks].sort((a, b) => b.startedAt - a.startedAt),
-);
+const sortedTasks = computed(() => [...robotStore.softwareTasks].sort((a, b) => b.startedAt - a.startedAt));
 
 const actionLabel: Record<SoftwareTask["action"], string> = {
   install: "安装",

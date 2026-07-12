@@ -4,7 +4,6 @@ import QRCode from "qrcode";
 import {
   useWebSocket,
   getClientId,
-  getClientName,
   setOnBindRequestAck,
   setOnBindSuccess,
   setOnBindFailed,
@@ -14,14 +13,24 @@ import type { BindingMethod, AuthRequiredData } from "@/types";
 import { useDevicesStore } from "@/stores/devices";
 
 const devicesStore = useDevicesStore();
-const { sendBindRequest, sendBindVerify, sendBindReplay, sendBindStartScan, sendBindCancel, sendBindShareUse, sendBindPassword } = useWebSocket();
+const {
+  sendBindRequest,
+  sendBindVerify,
+  sendBindReplay,
+  sendBindStartScan,
+  sendBindCancel,
+  sendBindShareUse,
+  sendBindPassword,
+} = useWebSocket();
 
 const props = defineProps<{
   authData: AuthRequiredData | null;
 }>();
 
 // ---- 状态 ----
-const step = ref<"select" | "display" | "tts" | "qr_scan" | "gimbal" | "password" | "share_code" | "success" | "failed">("select");
+const step = ref<
+  "select" | "display" | "tts" | "qr_scan" | "gimbal" | "password" | "share_code" | "success" | "failed"
+>("select");
 const requestToken = ref("");
 const errorMessage = ref("");
 const attempts = ref(0);
@@ -66,10 +75,8 @@ const methodDescriptions: Record<BindingMethod, string> = {
 
 /** 服务端可用方式 + 始终可用的分享码方式（qr_scan 已禁用，不展示） */
 const availableMethodList = computed<BindingMethod[]>(() => {
-  const serverMethods = (props.authData?.methods || availableMethods.value).filter(
-    (m) => m !== "qr_scan"
-  );
-  if (serverMethods.includes("share_code" as BindingMethod)) return serverMethods;
+  const serverMethods = (props.authData?.methods || availableMethods.value).filter((m) => m !== "qr_scan");
+  if (serverMethods.includes("share_code")) return serverMethods;
   return [...serverMethods, "share_code"];
 });
 
@@ -227,12 +234,7 @@ onUnmounted(() => {
       <h2>绑定认证</h2>
       <p class="hint">{{ props.authData?.message || "请选择绑定认证方式" }}</p>
       <div class="methods-grid">
-        <button
-          v-for="method in availableMethodList"
-          :key="method"
-          class="method-card"
-          @click="selectMethod(method)"
-        >
+        <button v-for="method in availableMethodList" :key="method" class="method-card" @click="selectMethod(method)">
           <span class="method-icon">{{ methodIcons[method] }}</span>
           <span class="method-label">{{ methodLabels[method] }}</span>
           <span class="method-desc">{{ methodDescriptions[method] }}</span>
@@ -307,29 +309,61 @@ onUnmounted(() => {
       <p class="hint">观察云台转动方向，依次点击对应方向按钮</p>
       <!-- 已输入序列显示 -->
       <div class="gimbal-display">
-        <div
-          v-for="i in gimbalSequenceLength"
-          :key="i"
-          class="gimbal-slot"
-          :class="{ filled: gimbalInputs[i - 1] }"
-        >
+        <div v-for="i in gimbalSequenceLength" :key="i" class="gimbal-slot" :class="{ filled: gimbalInputs[i - 1] }">
           {{ gimbalInputs[i - 1] || "" }}
         </div>
       </div>
       <!-- 方向按钮 -->
       <div class="gimbal-pad">
-        <button class="dir-btn" @click="addDirection('上')" :disabled="isSubmitting || gimbalInputs.length >= gimbalSequenceLength">↑</button>
+        <button
+          class="dir-btn"
+          :disabled="isSubmitting || gimbalInputs.length >= gimbalSequenceLength"
+          @click="addDirection('上')"
+        >
+          ↑
+        </button>
         <div class="dir-row">
-          <button class="dir-btn" @click="addDirection('左')" :disabled="isSubmitting || gimbalInputs.length >= gimbalSequenceLength">←</button>
-          <button class="dir-btn dir-btn-del" @click="removeLastDirection" :disabled="isSubmitting || gimbalInputs.length === 0" title="删除上一个">⌫</button>
-          <button class="dir-btn" @click="addDirection('右')" :disabled="isSubmitting || gimbalInputs.length >= gimbalSequenceLength">→</button>
+          <button
+            class="dir-btn"
+            :disabled="isSubmitting || gimbalInputs.length >= gimbalSequenceLength"
+            @click="addDirection('左')"
+          >
+            ←
+          </button>
+          <button
+            class="dir-btn dir-btn-del"
+            :disabled="isSubmitting || gimbalInputs.length === 0"
+            title="删除上一个"
+            @click="removeLastDirection"
+          >
+            ⌫
+          </button>
+          <button
+            class="dir-btn"
+            :disabled="isSubmitting || gimbalInputs.length >= gimbalSequenceLength"
+            @click="addDirection('右')"
+          >
+            →
+          </button>
         </div>
-        <button class="dir-btn" @click="addDirection('下')" :disabled="isSubmitting || gimbalInputs.length >= gimbalSequenceLength">↓</button>
+        <button
+          class="dir-btn"
+          :disabled="isSubmitting || gimbalInputs.length >= gimbalSequenceLength"
+          @click="addDirection('下')"
+        >
+          ↓
+        </button>
       </div>
       <div class="btn-group">
-        <button class="btn-primary" :disabled="gimbalInputs.length !== gimbalSequenceLength || isSubmitting" @click="submitGimbalSequence">确认</button>
-        <button class="btn-secondary" @click="replay" :disabled="isSubmitting">重新转动</button>
-        <button class="btn-back" @click="backToSelect" :disabled="isSubmitting">返回</button>
+        <button
+          class="btn-primary"
+          :disabled="gimbalInputs.length !== gimbalSequenceLength || isSubmitting"
+          @click="submitGimbalSequence"
+        >
+          确认
+        </button>
+        <button class="btn-secondary" :disabled="isSubmitting" @click="replay">重新转动</button>
+        <button class="btn-back" :disabled="isSubmitting" @click="backToSelect">返回</button>
       </div>
     </div>
 
@@ -347,9 +381,9 @@ onUnmounted(() => {
       />
       <div class="btn-group">
         <button class="btn-primary" :disabled="shareCodeInput.length !== 6 || isSubmitting" @click="submitShareCode">
-          {{ isSubmitting ? '绑定中...' : '确认绑定' }}
+          {{ isSubmitting ? "绑定中..." : "确认绑定" }}
         </button>
-        <button class="btn-back" @click="backToSelect" :disabled="isSubmitting">返回</button>
+        <button class="btn-back" :disabled="isSubmitting" @click="backToSelect">返回</button>
       </div>
     </div>
 
@@ -366,9 +400,9 @@ onUnmounted(() => {
       />
       <div class="btn-group">
         <button class="btn-primary" :disabled="!passwordInput || isSubmitting" @click="submitPassword">
-          {{ isSubmitting ? '验证中...' : '确认' }}
+          {{ isSubmitting ? "验证中..." : "确认" }}
         </button>
-        <button class="btn-back" @click="backToSelect" :disabled="isSubmitting">返回</button>
+        <button class="btn-back" :disabled="isSubmitting" @click="backToSelect">返回</button>
       </div>
     </div>
 
@@ -617,7 +651,9 @@ h2 {
 }
 
 @keyframes pulse {
-  0%, 80%, 100% {
+  0%,
+  80%,
+  100% {
     opacity: 0.3;
     transform: scale(0.8);
   }

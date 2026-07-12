@@ -371,11 +371,7 @@ export const useRobotStore = defineStore("robot", {
     },
 
     /** 按包名更新进行中的任务（可选按 action 精确匹配） */
-    updateSoftwareTaskByPackage(
-      pkg: string,
-      updates: Partial<SoftwareTask>,
-      action?: SoftwareTask["action"],
-    ): void {
+    updateSoftwareTaskByPackage(pkg: string, updates: Partial<SoftwareTask>, action?: SoftwareTask["action"]): void {
       for (let i = this.softwareTasks.length - 1; i >= 0; i--) {
         const t = this.softwareTasks[i];
         if (t.package === pkg && t.status === "running" && (action === undefined || t.action === action)) {

@@ -339,7 +339,15 @@ export interface StoredBinding {
 /* ---- 机器人详细配置 (R00033) ---- */
 
 /** 运动驱动类型 */
-export type DriveType = "mecanum" | "ackermann" | "differential" | "tracked" | "biped" | "self_balancing" | "spider" | "custom";
+export type DriveType =
+  | "mecanum"
+  | "ackermann"
+  | "differential"
+  | "tracked"
+  | "biped"
+  | "self_balancing"
+  | "spider"
+  | "custom";
 
 /** 机器人功能配置 */
 export interface FeaturesConfig {
@@ -426,6 +434,7 @@ export interface RobotConfig {
     cooldown_seconds: number;
     session_timeout: number;
     password_enabled: boolean;
+    password?: string;
     methods: Record<string, boolean>;
   };
   power_policy: { threshold: number };
