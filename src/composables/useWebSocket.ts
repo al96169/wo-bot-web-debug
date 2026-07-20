@@ -3,7 +3,7 @@ import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
 import { useAuth } from "./useAuth";
-import { resolveWebRTCAnswer, handleWebRTCIceCandidate } from "./useWebRTC";
+import { resolveWebRTCAnswer, handleWebRTCIceCandidate, useWebRTC } from "./useWebRTC";
 import type {
   AuthRequiredData,
   BindingInfo,
@@ -45,6 +45,18 @@ const _connectedPort = ref(0);
 let _token = "";
 /** 标记是否为主动断开，防止 onclose 触发无意义重连 */
 let _intentionalDisconnect = false;
+
+// ---- 云端信令远控模式 ----
+/** 连接模式：'direct' = 局域网直连，'signal' = 云端信令远控 */
+export const connectionMode = ref<"direct" | "signal">("direct");
+/** 信令模式下当前连接的 robotId（用于断线重连） */
+let _signalRobotId = "";
+/** 信令模式下重连计数 */
+let _signalReconnectCount = 0;
+/** 信令模式下是否已完成 WebRTC 握手（DataChannel 曾打开过） */
+let _signalHandshakeAccepted = false;
+/** 信令模式下的 RTCPeerConnection（独立于 useWebRTC 模块级 _pc） */
+let _signalPc: RTCPeerConnection | null = null;
 
 // ---- 心跳 ----
 let _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -326,7 +338,8 @@ function _send(frame: WsMsg, forceWs = false): void {
   if (!forceWs && _dc && _dc.readyState === "open") {
     console.log("[WS.send] via DataChannel:", frame.type, frame.data);
     _dc.send(payload);
-  } else if (_ws && _ws.readyState === WebSocket.OPEN) {
+  } else if (connectionMode.value === "direct" && _ws && _ws.readyState === WebSocket.OPEN) {
+    // 信令模式下 WebSocket 仅用于信令协议，不承载业务消息
     console.log("[WS.send] via WebSocket:", frame.type, frame.data);
     _ws.send(payload);
   } else {
@@ -344,6 +357,8 @@ function _send(frame: WsMsg, forceWs = false): void {
       "ws:",
       !!_ws,
       _ws?.readyState,
+      "mode:",
+      connectionMode.value,
     );
     _pendingQueue.push(payload);
   }
@@ -495,13 +510,17 @@ export function useWebSocket() {
     console.log("[WS] disconnect() 主动断开", {
       currentIp: _connectedIp.value,
       currentPort: _connectedPort.value,
+      connectionMode: connectionMode.value,
       hasWs: !!_ws,
       readyState: _ws?.readyState,
     });
     _intentionalDisconnect = true;
     _handshakeAccepted = false;
+    _signalHandshakeAccepted = false;
     _clearTimers();
     stopHeartbeat();
+    // 清理信令模式 WebRTC 资源
+    cleanupSignalWebRTC();
     if (_ws) {
       _ws.close();
       _ws = null;
@@ -510,6 +529,10 @@ export function useWebSocket() {
     appStore.connection = "disconnected";
     _remoteFeatures.value = []; // 清空 features，下次连接重新获取
     appStore.setSSHConnected(false);
+    // 重置连接模式为直连
+    connectionMode.value = "direct";
+    _signalReconnectCount = 0;
+    _signalRobotId = "";
   }
 
   // ---- 心跳 ----
@@ -522,7 +545,9 @@ export function useWebSocket() {
         console.warn("[WS] 心跳检测: WebSocket 已断开, readyState:", _ws?.readyState);
         stopHeartbeat();
         // 主动触发重连
-        if (_connectedIp.value && _connectedPort.value) {
+        if (connectionMode.value === "signal" && _signalRobotId) {
+          maybeReconnectSignal(_signalRobotId);
+        } else if (_connectedIp.value && _connectedPort.value) {
           maybeReconnect(_connectedIp.value, _connectedPort.value);
         }
         return;
@@ -534,10 +559,19 @@ export function useWebSocket() {
         _ws.close();
         return;
       }
-      // 心跳始终通过 WebSocket 直接发送，不经过 _send()
-      // 原因：_send() 优先走 DataChannel，但 DataChannel pong 响应更新的是
-      // appStore._lastPing 而非 _lastPongTime，导致心跳超时误关闭 WebSocket
-      _ws.send(JSON.stringify({ type: "ping", data: { ts: Date.now() } }));
+      // 直连模式: 通过 WebSocket 直接发送 ping
+      // 信令模式: 通过 DataChannel 发送 ping（信令服务器不处理业务 ping）
+      if (connectionMode.value === "signal") {
+        if (_dc && _dc.readyState === "open") {
+          _dc.send(JSON.stringify({ type: "ping", data: { ts: Date.now() } }));
+        }
+        // DC 未就绪时跳过本轮心跳（不触发超时）
+      } else {
+        // 心跳始终通过 WebSocket 直接发送，不经过 _send()
+        // 原因：_send() 优先走 DataChannel，但 DataChannel pong 响应更新的是
+        // appStore._lastPing 而非 _lastPongTime，导致心跳超时误关闭 WebSocket
+        _ws.send(JSON.stringify({ type: "ping", data: { ts: Date.now() } }));
+      }
     }, HEARTBEAT_INTERVAL);
   }
 
@@ -587,6 +621,460 @@ export function useWebSocket() {
       clearTimeout(_reconnectTimer);
       _reconnectTimer = null;
     }
+  }
+
+  /* ============================================================
+   * 云端信令远控模式（connectViaSignal）
+   *
+   * 通过信令服务器建立 WebSocket 信令通道，再通过 WebRTC DataChannel
+   * 承载业务消息。与直连模式（connect）独立，共用 _send / handleSignalingMessage
+   * 复用业务消息处理逻辑。
+   * ============================================================ */
+
+  /** 清理信令模式 WebRTC 资源 */
+  function cleanupSignalWebRTC(): void {
+    if (_signalPc) {
+      try {
+        _signalPc.close();
+      } catch {
+        /* ignore */
+      }
+      _signalPc = null;
+    }
+    setDataChannel(null);
+  }
+
+  /** 设置信令模式 DataChannel 的事件处理器 */
+  function setupSignalDataChannel(channel: RTCDataChannel): void {
+    channel.onopen = () => {
+      console.log("[WS-Signal] DataChannel opened!");
+      _signalHandshakeAccepted = true;
+      appStore.connection = "connected";
+      appStore.setSSHConnected(true);
+      appStore.showToast("云端连接已建立", "success");
+      // 注册到 useWebSocket 模块级引用，使 _send() 可以通过 DC 发送
+      setDataChannel(channel);
+      // 订阅设备状态
+      channel.send(JSON.stringify({ type: "subscribe", data: { events: ["status"] } }));
+      // 启动心跳（信令模式通过 DataChannel 发送 ping）
+      startHeartbeat();
+    };
+
+    channel.onmessage = (event: MessageEvent) => {
+      // DataChannel 承载业务消息，复用 handleSignalingMessage 处理逻辑
+      try {
+        const frame: WsMsg = JSON.parse(event.data as string);
+        lastMessage.value = frame;
+        handleSignalingMessage(frame);
+      } catch {
+        /* 非 JSON 消息忽略 */
+      }
+    };
+
+    channel.onclose = () => {
+      console.log("[WS-Signal] DataChannel closed");
+      setDataChannel(null);
+      appStore.setSSHConnected(false);
+    };
+
+    channel.onerror = (event: Event) => {
+      const err = (event as RTCErrorEvent).error;
+      console.error("[WS-Signal] DataChannel error:", err?.message ?? "unknown");
+    };
+  }
+
+  /** 创建 WebRTC PeerConnection 并发送 call 消息（信令模式） */
+  async function initiateSignalWebRTC(ws: WebSocket, robotId: string): Promise<void> {
+    console.log("[WS-Signal] initiateSignalWebRTC()", { robotId });
+
+    // 获取 useWebRTC 的响应式引用（用于视频流和状态监控面板）
+    const webrtc = useWebRTC();
+
+    // 清理旧 PC
+    if (_signalPc) {
+      try {
+        _signalPc.close();
+      } catch {
+        /* ignore */
+      }
+      _signalPc = null;
+    }
+
+    const STUN_SERVER = "stun:stun.l.google.com:19302";
+
+    try {
+      const peerConnection = new RTCPeerConnection({
+        iceServers: [{ urls: STUN_SERVER }],
+      });
+      _signalPc = peerConnection;
+      webrtc.pc.value = peerConnection;
+
+      // 接收服务端创建的远程 DataChannel（fallback）
+      peerConnection.ondatachannel = (event: RTCDataChannelEvent) => {
+        const rc = event.channel;
+        console.log("[WS-Signal] Remote DataChannel received:", rc.label);
+        webrtc.dc.value = rc;
+        setupSignalDataChannel(rc);
+      };
+
+      // 创建 DataChannel
+      const channel = peerConnection.createDataChannel("wobot-control", { ordered: true });
+      webrtc.dc.value = channel;
+      setupSignalDataChannel(channel);
+
+      // 接收远端视频流（双摄像头，与直连模式一致）
+      let ontrackCount = 0;
+      peerConnection.ontrack = (event: RTCTrackEvent) => {
+        ontrackCount++;
+        let stream: MediaStream;
+        if (event.streams && event.streams.length > 0) {
+          stream = event.streams[0];
+        } else {
+          stream = new MediaStream();
+          stream.addTrack(event.track);
+        }
+        console.log("[WS-Signal] ontrack #" + ontrackCount, "kind:", event.track.kind);
+
+        if (ontrackCount === 1) {
+          webrtc.videoStream0.value = stream;
+        } else {
+          webrtc.videoStream1.value = stream;
+        }
+
+        event.track.onunmute = () => {
+          if (event.track.kind === "video") {
+            webrtc.webrtcState.value = "connected";
+            appStore.setSSHConnected(true);
+            console.log("[WS-Signal] 视频轨数据到达, webrtcState → connected");
+          }
+        };
+      };
+
+      // ICE candidate → 通过信令服务器转发
+      peerConnection.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
+        if (event.candidate && ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "ice",
+              candidate: event.candidate.toJSON(),
+            }),
+          );
+        }
+      };
+
+      // ICE 连接状态监听
+      peerConnection.oniceconnectionstatechange = () => {
+        if (peerConnection !== _signalPc) return;
+        const iceState = peerConnection.iceConnectionState;
+        webrtc.iceConnectionState.value = iceState;
+        console.log("[WS-Signal] ICE state:", iceState);
+        if (iceState === "connected" || iceState === "completed") {
+          webrtc.webrtcState.value = "connected";
+        } else if (iceState === "failed") {
+          webrtc.webrtcState.value = "failed";
+          appStore.setSSHConnected(false);
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        if (peerConnection !== _signalPc) return;
+        const state = peerConnection.connectionState;
+        webrtc.connectionState.value = state;
+        console.log("[WS-Signal] PC connectionState:", state);
+        if (state === "connected") {
+          webrtc.webrtcState.value = "connected";
+          appStore.setSSHConnected(true);
+        } else if (state === "failed" || state === "disconnected") {
+          webrtc.webrtcState.value = "failed";
+          appStore.setSSHConnected(false);
+        }
+      };
+
+      // 创建双 Video Transceiver（服务端两个摄像头添加独立视频轨）
+      peerConnection.addTransceiver("video", { direction: "recvonly" });
+      peerConnection.addTransceiver("video", { direction: "recvonly" });
+
+      // 创建 SDP offer
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      webrtc.signalingState.value = peerConnection.signalingState;
+
+      console.log("[WS-Signal] 发送 call 消息, offer SDP length:", offer.sdp?.length);
+      ws.send(
+        JSON.stringify({
+          type: "call",
+          sdp: { type: offer.type, sdp: offer.sdp },
+        }),
+      );
+    } catch (e) {
+      console.error("[WS-Signal] initiateSignalWebRTC 失败:", e);
+      appStore.showToast("WebRTC 连接创建失败", "error");
+      webrtc.webrtcState.value = "failed";
+    }
+  }
+
+  /** 处理信令服务器 WebSocket 消息（与直连模式 handleSignalingMessage 独立） */
+  async function handleSignalServerMessage(msg: { type: string; [key: string]: unknown }): Promise<void> {
+    console.log("[WS-Signal] 收到信令消息:", msg.type);
+
+    switch (msg.type) {
+      case "call-ack": {
+        // 收到 TURN 凭证，重新配置 PC 的 ICE 服务器
+        const turn = msg.turn as { username?: string; credential?: string; ttl?: number } | undefined;
+        if (turn && turn.username && turn.credential && _signalPc) {
+          const signalUrl = import.meta.env.VITE_SIGNAL_URL;
+          const turnHost = signalUrl.replace(/^https?:\/\//, "");
+          try {
+            _signalPc.setConfiguration({
+              iceServers: [
+                { urls: "stun:stun.l.google.com:19302" },
+                { urls: `turn:${turnHost}:3478`, username: turn.username, credential: turn.credential },
+                { urls: `turn:${turnHost}:3478?transport=tcp`, username: turn.username, credential: turn.credential },
+              ],
+            });
+            console.log("[WS-Signal] TURN 凭证已配置, ttl:", turn.ttl);
+          } catch (e) {
+            console.warn("[WS-Signal] TURN 配置失败:", e);
+          }
+        }
+        break;
+      }
+
+      case "answer": {
+        // 收到 SDP answer，设置远端描述
+        if (!_signalPc) {
+          console.warn("[WS-Signal] answer 收到但 PC 为 null");
+          return;
+        }
+        try {
+          const sdp = msg.sdp;
+          let answerDesc: RTCSessionDescription;
+          if (typeof sdp === "string") {
+            answerDesc = new RTCSessionDescription({ type: "answer", sdp });
+          } else if (sdp && typeof sdp === "object") {
+            answerDesc = new RTCSessionDescription(sdp as RTCSessionDescriptionInit);
+          } else {
+            console.warn("[WS-Signal] answer 消息缺少 sdp 字段");
+            return;
+          }
+          _signalPc.setRemoteDescription(answerDesc).then(() => {
+            console.log("[WS-Signal] setRemoteDescription OK, sdp length:", answerDesc.sdp?.length);
+          }).catch((e: unknown) => {
+            console.error("[WS-Signal] setRemoteDescription 失败:", e);
+          });
+        } catch (e) {
+          console.error("[WS-Signal] setRemoteDescription 失败:", e);
+        }
+        break;
+      }
+
+      case "ice": {
+        // 收到远端 ICE candidate，转发给 PC
+        if (!_signalPc) {
+          console.warn("[WS-Signal] ice 收到但 PC 为 null");
+          return;
+        }
+        try {
+          const candidate = msg.candidate;
+          if (!candidate) {
+            // null candidate = end of candidates
+            console.log("[WS-Signal] ICE candidate gathering complete (null candidate)");
+            return;
+          }
+          if (typeof candidate === "string") {
+            await _signalPc.addIceCandidate(new RTCIceCandidate({ candidate }));
+          } else {
+            await _signalPc.addIceCandidate(new RTCIceCandidate(candidate as RTCIceCandidateInit));
+          }
+          console.log("[WS-Signal] addIceCandidate OK");
+        } catch (e) {
+          console.error("[WS-Signal] addIceCandidate 失败:", e);
+        }
+        break;
+      }
+
+      case "presence": {
+        // 设备在线状态
+        const deviceId = String(msg.deviceId ?? "");
+        const online = Boolean(msg.online);
+        console.log("[WS-Signal] presence:", { deviceId, online });
+        if (!online) {
+          appStore.showToast("设备不在线", "error");
+          appStore.connection = "disconnected";
+        }
+        break;
+      }
+
+      case "error": {
+        const message = String(msg.message ?? "未知错误");
+        console.warn("[WS-Signal] error:", message);
+        appStore.showToast(`云端连接错误: ${message}`, "error");
+        appStore.connection = "error";
+        break;
+      }
+
+      default:
+        console.log("[WS-Signal] 未处理的消息类型:", msg.type);
+    }
+
+    // 通知消息监听器
+    _messageListeners.forEach((fn) => {
+      try {
+        fn(msg as any);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
+  /** 信令模式断线重连 */
+  function maybeReconnectSignal(robotId: string): void {
+    console.log("[WS-Signal] maybeReconnectSignal() 检查:", {
+      robotId,
+      intentionalDisconnect: _intentionalDisconnect,
+      handshakeAccepted: _signalHandshakeAccepted,
+      reconnectCount: _signalReconnectCount,
+      maxReconnect: MAX_RECONNECT,
+    });
+
+    if (_intentionalDisconnect) {
+      console.log("[WS-Signal] maybeReconnectSignal() 跳过: 主动断开或服务端拒绝");
+      return;
+    }
+    if (appStore.mockMode) {
+      console.log("[WS-Signal] maybeReconnectSignal() 跳过: Mock 模式");
+      return;
+    }
+    const maxRetries = _signalHandshakeAccepted ? MAX_RECONNECT : MAX_INITIAL_RETRIES;
+    if (_signalReconnectCount >= maxRetries) {
+      console.log("[WS-Signal] maybeReconnectSignal() 跳过: 已达最大重连次数", _signalReconnectCount, "/", maxRetries);
+      return;
+    }
+    _signalReconnectCount++;
+    console.log(
+      "[WS-Signal] maybeReconnectSignal() 安排重连:",
+      _signalReconnectCount,
+      "/",
+      maxRetries,
+    );
+    _reconnectTimer = setTimeout(() => connectViaSignal(robotId), RECONNECT_DELAY * _signalReconnectCount);
+  }
+
+  /** 通过信令服务器连接设备（云端远控模式） */
+  function connectViaSignal(robotId: string): void {
+    console.log("[WS-Signal] connectViaSignal() 调用:", { robotId });
+
+    // 清理旧连接
+    if (_ws) {
+      console.log("[WS-Signal] connectViaSignal() 断开旧连接, readyState:", _ws.readyState);
+      _intentionalDisconnect = true;
+      disconnect();
+    }
+    _intentionalDisconnect = false;
+    _signalHandshakeAccepted = false;
+    connectionMode.value = "signal";
+    _signalRobotId = robotId;
+    _signalReconnectCount = 0;
+    appStore.connection = "connecting";
+
+    // 读取信令服务器地址
+    const signalUrl = import.meta.env.VITE_SIGNAL_URL;
+    if (!signalUrl) {
+      appStore.showToast("未配置信令服务器地址 (VITE_SIGNAL_URL)", "error");
+      appStore.connection = "error";
+      return;
+    }
+
+    // 获取 access token
+    const { accessToken } = useAuth();
+    if (!accessToken.value) {
+      appStore.showToast("请先登录后再使用云端远控", "error");
+      appStore.connection = "error";
+      return;
+    }
+
+    // 构造 WebSocket URL: https:// → wss://, http:// → ws://
+    const wsProtocol = signalUrl.startsWith("https://") ? "wss" : "ws";
+    const wsHost = signalUrl.replace(/^https?:\/\//, "");
+    const url = `${wsProtocol}://${wsHost}/ws?role=client&robotId=${encodeURIComponent(robotId)}&token=${encodeURIComponent(accessToken.value)}`;
+
+    console.log("[WS-Signal] connectViaSignal() 创建 WebSocket:", url);
+    const socket = new WebSocket(url);
+    _ws = socket;
+    ws.value = socket;
+
+    _connectTimer = setTimeout(() => {
+      if (socket.readyState !== WebSocket.OPEN) {
+        console.warn("[WS-Signal] 连接超时:", { robotId, readyState: socket.readyState });
+        socket.close();
+        appStore.connection = "error";
+        appStore.showToast(`云端连接超时: ${robotId}`, "error");
+        maybeReconnectSignal(robotId);
+      }
+    }, CONNECT_TIMEOUT);
+
+    socket.onopen = () => {
+      console.log("[WS-Signal] onopen: 已连接信令服务器", { robotId });
+      if (_connectTimer) {
+        clearTimeout(_connectTimer);
+        _connectTimer = null;
+      }
+      // 清空 WebSocket 待发送队列
+      if (_pendingQueue.length > 0) {
+        const q = _pendingQueue;
+        _pendingQueue = [];
+        for (const p of q) socket.send(p);
+      }
+      // 发起 WebRTC 连接（创建 offer 并发送 call 消息）
+      initiateSignalWebRTC(socket, robotId);
+    };
+
+    socket.onmessage = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data as string);
+        lastMessage.value = msg as WsMsg;
+        handleSignalServerMessage(msg);
+      } catch {
+        /* 非 JSON 消息忽略 */
+      }
+    };
+
+    socket.onerror = (_event: Event) => {
+      console.error("[WS-Signal] onerror 触发:", {
+        robotId,
+        readyState: socket.readyState,
+        isActive: socket === _ws,
+      });
+      appStore.connection = "error";
+      appStore.showToast(`云端连接失败: ${robotId}`, "error");
+    };
+
+    socket.onclose = (event: CloseEvent) => {
+      console.log("[WS-Signal] onclose 触发:", {
+        robotId,
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+        isActive: socket === _ws,
+        intentionalDisconnect: _intentionalDisconnect,
+        handshakeAccepted: _signalHandshakeAccepted,
+      });
+      if (socket !== _ws) {
+        console.log("[WS-Signal] onclose 忽略: 旧 socket (已被替换)");
+        return;
+      }
+      stopHeartbeat();
+      // 清理 WebRTC 资源
+      cleanupSignalWebRTC();
+      // 服务端明确拒绝 (code >= 4000): 不重连
+      if (!_intentionalDisconnect && event.code >= 4000) {
+        console.log("[WS-Signal] 服务端拒绝连接, code:", event.code);
+        _intentionalDisconnect = true;
+      }
+      appStore.connection = "disconnected";
+      appStore.setSSHConnected(false);
+      maybeReconnectSignal(robotId);
+    };
   }
 
   /** 处理所有消息（信令 + 业务响应，统一通过 WebSocket） */
@@ -642,8 +1130,8 @@ export function useWebSocket() {
           _pendingQueue = [];
           for (const p of q) _ws!.send(p);
         }
-        // 自动重连时也触发 WebRTC 握手
-        if (_onReconnect) _onReconnect();
+        // 自动重连时也触发 WebRTC 握手（仅直连模式；信令模式由 connectViaSignal 管理）
+        if (connectionMode.value === "direct" && _onReconnect) _onReconnect();
         // 启动心跳
         startHeartbeat();
         break;
@@ -1350,6 +1838,7 @@ export function useWebSocket() {
     connectedIp: _connectedIp,
     connectedPort: _connectedPort,
     connect,
+    connectViaSignal,
     disconnect,
     send: (frame: WsMsg) => _send(frame),
     sendWs: (frame: WsMsg) => _send(frame, true), // 强制走 WebSocket

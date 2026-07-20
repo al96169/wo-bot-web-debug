@@ -4,12 +4,14 @@ import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useDiscovery } from "@/composables/useDiscovery";
 import { useAuth } from "@/composables/useAuth";
+import { useWebSocket } from "@/composables/useWebSocket";
 import type { Device } from "@/types";
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
 const { isAuthenticated } = useAuth();
 const { startScan } = useDiscovery();
+const { connectViaSignal } = useWebSocket();
 
 const rescanning = ref(false);
 const connectingCloud = ref(false);
@@ -146,7 +148,13 @@ async function handleCloudDeviceClick(device: { robotId: string; robotName: stri
       return;
     }
 
-    // 5. 仍未找到
+    // 5. 仍未找到 — 如果已登录且有 robotId，自动切换到云端远控模式
+    if (isAuthenticated.value && device.robotId) {
+      appStore.showToast("正在通过云端连接设备...", "info");
+      connectViaSignal(device.robotId);
+      return;
+    }
+
     appStore.showToast(
       `设备「${targetName}」未在本地网络中发现，请确认设备已开机并连接到同一局域网`,
       "error",
