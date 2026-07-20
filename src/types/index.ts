@@ -13,6 +13,8 @@ export interface Device {
   port: number;
   online: boolean;
   robotInfo?: RobotInfo;
+  /** 机器人真实 ID（由 mDNS 发现或连接后获取），用于与云端设备匹配 */
+  robotId?: string;
 }
 
 /** 机器人基本信息（连接后获取） */

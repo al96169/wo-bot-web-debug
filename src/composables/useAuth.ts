@@ -289,6 +289,15 @@ export function useAuth() {
     // 工具
     authHeader,
 
+    /** 获取当前有效的 access token（过期时自动刷新） */
+    async getAccessToken(): Promise<string | null> {
+      if (!accessToken.value) return null;
+      if (Date.now() >= tokenExpiresAt.value) {
+        await refresh();
+      }
+      return accessToken.value;
+    },
+
     // 配置（用于调试）
     AUTH_WEB_URL,
     API_BASE,

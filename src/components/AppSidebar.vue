@@ -3,13 +3,16 @@ import { computed, ref } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useDiscovery } from "@/composables/useDiscovery";
+import { useAuth } from "@/composables/useAuth";
 import type { Device } from "@/types";
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
+const { isAuthenticated } = useAuth();
 const { startScan } = useDiscovery();
 
 const rescanning = ref(false);
+const connectingCloud = ref(false);
 
 async function handleRescan() {
   rescanning.value = true;
@@ -78,6 +81,81 @@ function handleAddDevice() {
   emit("addDevice");
 }
 
+/** 云端设备（已去重） */
+const cloudDevices = computed(() => devicesStore.cloudDevicesFiltered);
+
+/** 云端设备状态文本 */
+function getCloudDeviceStatus(online: boolean): { text: string; cls: string } {
+  return online
+    ? { text: "● 在线", cls: "" }
+    : { text: "● 离线", cls: "offline" };
+}
+
+/** 刷新云端设备列表 */
+async function handleRefreshCloud() {
+  await devicesStore.loadCloudDevices();
+}
+
+/** 点击云端设备：按 robotId 匹配本地/发现设备，必要时自动扫描 */
+async function handleCloudDeviceClick(device: { robotId: string; robotName: string | null }) {
+  if (connectingCloud.value) return;
+  connectingCloud.value = true;
+  const targetName = device.robotName || device.robotId.slice(0, 8);
+
+  try {
+    // 1. 先在本地已保存设备中查找（robotId 或 id 匹配）
+    const localMatch = devicesStore.devices.find(
+      (d) => d.robotId === device.robotId || d.id === device.robotId,
+    );
+    if (localMatch) {
+      handleDeviceClick(localMatch);
+      return;
+    }
+
+    // 2. 在已发现设备中查找（按 robotId 或名称匹配）
+    const findInDiscovered = () =>
+      devicesStore.discovered.find(
+        (d) =>
+          d.robotId === device.robotId ||
+          (d.name === device.robotName && device.robotName),
+      );
+
+    let discoveredMatch = findInDiscovered();
+    if (discoveredMatch) {
+      // 导入到本地列表并连接
+      const imported = devicesStore.importDiscovered(discoveredMatch.id);
+      if (imported) {
+        imported.robotId = device.robotId;
+        handleDeviceClick(imported);
+      }
+      return;
+    }
+
+    // 3. 未找到，自动触发 mDNS 扫描
+    appStore.showToast(`正在局域网中搜索设备「${targetName}」...`, "info");
+    await startScan();
+
+    // 4. 扫描完成后再查找
+    discoveredMatch = findInDiscovered();
+    if (discoveredMatch) {
+      const imported = devicesStore.importDiscovered(discoveredMatch.id);
+      if (imported) {
+        imported.robotId = device.robotId;
+        handleDeviceClick(imported);
+      }
+      return;
+    }
+
+    // 5. 仍未找到
+    appStore.showToast(
+      `设备「${targetName}」未在本地网络中发现，请确认设备已开机并连接到同一局域网`,
+      "error",
+    );
+  } finally {
+    connectingCloud.value = false;
+  }
+}
+
 /** 统一设备状态：当前设备跟随 appStore.connection，其他设备跟随 device.online */
 function getDeviceStatus(device: Device): { text: string; cls: string } {
   const isCurrent = isCurrentDevice(device);
@@ -120,6 +198,49 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
           </div>
         </div>
       </div>
+      <!-- 云端设备（当前帐号绑定的设备） -->
+      <div v-if="isAuthenticated" class="cloud-section">
+        <div class="section-header">
+          <h3 class="section-title">☁️ 我的设备</h3>
+          <button
+            class="rescan-btn"
+            :disabled="devicesStore.loadingCloud"
+            title="刷新云端设备列表"
+            @click="handleRefreshCloud"
+          >
+            {{ devicesStore.loadingCloud ? "..." : "刷新" }}
+          </button>
+        </div>
+        <div v-if="devicesStore.loadingCloud" class="scan-indicator">
+          <span class="spinner"></span> 加载中...
+        </div>
+        <div v-else class="device-list">
+          <div
+            v-for="device in cloudDevices"
+            :key="device.robotId"
+            class="device-card cloud-device-card"
+            :class="{ disabled: connectingCloud }"
+            @click="handleCloudDeviceClick(device)"
+          >
+            <div class="device-card-header">
+              <span class="device-name">{{ device.robotName || device.robotId.slice(0, 12) }}</span>
+              <span class="cloud-badge">☁️</span>
+            </div>
+            <div class="device-ip">{{ device.robotId.slice(0, 16) }}...</div>
+            <div class="device-status-line" :class="getCloudDeviceStatus(device.status === 'online').cls">
+              {{ getCloudDeviceStatus(device.status === 'online').text }}
+            </div>
+          </div>
+          <div
+            v-if="cloudDevices.length === 0"
+            class="empty-state"
+            style="padding: 16px; font-size: 12px"
+          >
+            暂无云端设备
+          </div>
+        </div>
+      </div>
+
       <div class="discover-section">
         <div class="section-header">
           <h3 class="section-title">发现设备</h3>
@@ -215,7 +336,8 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
   letter-spacing: 0.5px;
 }
 .device-section,
-.discover-section {
+.discover-section,
+.cloud-section {
   margin-bottom: 24px;
 }
 .section-header {
@@ -282,6 +404,20 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
   background: rgba(0, 212, 255, 0.2);
   color: var(--accent);
   flex-shrink: 0;
+}
+.cloud-badge {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.cloud-device-card {
+  border-style: dashed;
+}
+.cloud-device-card:hover {
+  border-style: solid;
+}
+.cloud-device-card.disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 .device-ip {
   font-size: 11px;

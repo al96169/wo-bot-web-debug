@@ -30,7 +30,7 @@ export function useDiscovery() {
   const scanning = ref(false);
 
   /** 快速探活单个 IP */
-  function probe(ip: string, timeout: number): Promise<{ name: string; ip: string } | null> {
+  function probe(ip: string, timeout: number): Promise<{ name: string; ip: string; robotId?: string } | null> {
     return new Promise((resolve) => {
       const ws = new WebSocket(`ws://${ip}:${WS_PORT}?protocol_version=${PROBE_PROTOCOL_VERSION}`);
       const tid = setTimeout(() => {
@@ -49,7 +49,12 @@ export function useDiscovery() {
           ws.close();
           try {
             const m = JSON.parse(e.data);
-            resolve({ name: m.data?.name || `设备 ${ip}`, ip: m.data?.ip || ip });
+            const data = m.data || {};
+            resolve({
+              name: data.name || `设备 ${ip}`,
+              ip: data.ip || ip,
+              robotId: data.robot_id || undefined,
+            });
           } catch {
             resolve({ name: `设备 ${ip}`, ip });
           }
@@ -107,14 +112,14 @@ export function useDiscovery() {
 
     const [mdnsDevices, localResults] = await Promise.all([mdnsPromise, localPromise]);
 
-    const combined = new Map<string, { name: string; ip: string; port: number }>();
+    const combined = new Map<string, { name: string; ip: string; port: number; robotId?: string }>();
 
     for (const d of mdnsDevices) {
-      combined.set(d.ip + ":" + d.port, { name: d.name, ip: d.ip, port: d.port });
+      combined.set(d.ip + ":" + d.port, { name: d.name, ip: d.ip, port: d.port, robotId: d.id });
     }
     for (const r of localResults) {
       if (!r) continue;
-      combined.set(r.ip + ":" + WS_PORT, { name: r.name, ip: r.ip, port: WS_PORT });
+      combined.set(r.ip + ":" + WS_PORT, { name: r.name, ip: r.ip, port: WS_PORT, robotId: r.robotId });
     }
 
     for (const device of combined.values()) {
@@ -124,6 +129,7 @@ export function useDiscovery() {
         ip: device.ip,
         port: device.port,
         online: true,
+        robotId: device.robotId,
       });
     }
 

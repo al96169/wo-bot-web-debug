@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import type { Device, RobotInfo } from "../types";
 import { useAppStore } from "../stores/app";
+import type { CloudDevice } from "../services/account";
 
 /* ============================================================
  * wo-bot-vue - 设备管理 (Pinia Store)
@@ -68,6 +69,12 @@ export const useDevicesStore = defineStore("devices", {
     /** 扫描发现的设备 */
     discovered: [] as Device[],
 
+    /** 云端绑定的设备（当前帐号下） */
+    cloudDevices: [] as CloudDevice[],
+
+    /** 是否正在加载云端设备 */
+    loadingCloud: false,
+
     /** 是否正在扫描 */
     scanning: false,
   }),
@@ -91,6 +98,16 @@ export const useDevicesStore = defineStore("devices", {
         robotId: info?.robot_id ?? "--",
         version: info?.version ?? "--",
         features: info?.features ?? [],
+      });
+    },
+
+    /** 云端设备中尚未出现在本地列表和发现列表的部分（按 robotId 去重） */
+    cloudDevicesFiltered(state): CloudDevice[] {
+      const localRobotIds = new Set(state.devices.map((d) => d.robotId || d.id).filter(Boolean));
+      const discoveredRobotIds = new Set(state.discovered.map((d) => d.robotId).filter(Boolean));
+      return state.cloudDevices.filter((c) => {
+        if (localRobotIds.has(c.robotId) || discoveredRobotIds.has(c.robotId)) return false;
+        return true;
       });
     },
   },
@@ -167,9 +184,11 @@ export const useDevicesStore = defineStore("devices", {
       const dev = this.devices.find((d) => d.id === oldId);
       if (dev) {
         dev.id = robotId;
+        dev.robotId = robotId;
       }
       // 更新当前设备引用
       this.currentDevice.id = robotId;
+      this.currentDevice.robotId = robotId;
       console.log("[DevicesStore] updateCurrentDeviceId:", oldId, "->", robotId);
       this.saveDevices();
     },
@@ -220,6 +239,27 @@ export const useDevicesStore = defineStore("devices", {
       this.devices.push(newDevice);
       this.saveDevices();
       return newDevice;
+    },
+
+    /** 加载云端设备列表（当前帐号绑定的设备） */
+    async loadCloudDevices(): Promise<void> {
+      this.loadingCloud = true;
+      try {
+        const { getDevices } = await import("../services/account");
+        const devices = await getDevices();
+        this.cloudDevices = devices;
+        console.log("[DevicesStore] cloud devices loaded:", devices.length);
+      } catch (e) {
+        console.warn("[DevicesStore] loadCloudDevices failed:", e);
+        this.cloudDevices = [];
+      } finally {
+        this.loadingCloud = false;
+      }
+    },
+
+    /** 清空云端设备（登出时调用） */
+    clearCloudDevices(): void {
+      this.cloudDevices = [];
     },
   },
 });

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import { useRoute } from "vue-router";
+import { useAuth } from "@/composables/useAuth";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
@@ -45,6 +46,7 @@ import VersionMismatchDialog from "@/components/dialogs/VersionMismatchDialog.vu
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
+const { isAuthenticated } = useAuth();
 const robotStore = useRobotStore();
 const route = useRoute();
 
@@ -167,6 +169,19 @@ setOnReconnect(() => {
 // 加载持久化设置和设备列表
 appStore.loadSettings();
 devicesStore.loadDevices();
+
+// 登录状态变化时自动加载/清空云端设备
+watch(
+  isAuthenticated,
+  (authed) => {
+    if (authed) {
+      devicesStore.loadCloudDevices();
+    } else {
+      devicesStore.clearCloudDevices();
+    }
+  },
+  { immediate: true },
+);
 
 // Mock 启动配置：URL ?mock 参数优先，其次 .env VITE_MOCK_DEFAULT
 const urlParams = new URLSearchParams(window.location.search);

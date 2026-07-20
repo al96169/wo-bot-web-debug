@@ -2,6 +2,7 @@ import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
+import { useAuth } from "./useAuth";
 import { resolveWebRTCAnswer, handleWebRTCIceCandidate } from "./useWebRTC";
 import type {
   AuthRequiredData,
@@ -404,6 +405,11 @@ export function useWebSocket() {
     if (_pendingShareCode) {
       url += `&shareCode=${encodeURIComponent(_pendingShareCode)}`;
       _pendingShareCode = ""; // 消费后清除，避免重连时重复使用
+    }
+    // 附加 accountToken（已登录用户帐号时传递 JWT，用于设备归属验证）
+    const { accessToken } = useAuth();
+    if (accessToken.value) {
+      url += `&accountToken=${encodeURIComponent(accessToken.value)}`;
     }
     console.log("[WS] connect() 创建 WebSocket:", url);
     const socket = new WebSocket(url);
