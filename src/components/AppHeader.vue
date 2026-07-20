@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
+import { useAuth } from "@/composables/useAuth";
 import type { ViewName } from "@/types";
 import CommsMonitor from "@/components/CommsMonitor.vue";
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
 const robotStore = useRobotStore();
+const router = useRouter();
+const { user, isAuthenticated, login, logout } = useAuth();
 
 const emit = defineEmits<{
   "ops-action": [payload: { type: string }];
@@ -16,6 +20,7 @@ const emit = defineEmits<{
 
 const opsMenuOpen = ref(false);
 const commsMonitorOpen = ref(false);
+const userMenuOpen = ref(false);
 
 const isConnected = computed(() => appStore.connection === "connected");
 const hasDeviceSelected = computed(() => !!devicesStore.currentDevice);
@@ -110,6 +115,24 @@ function handleOpsAction(action: string) {
 function toggleCommsMonitor() {
   commsMonitorOpen.value = !commsMonitorOpen.value;
   if (commsMonitorOpen.value) opsMenuOpen.value = false;
+}
+
+function toggleUserMenu() {
+  userMenuOpen.value = !userMenuOpen.value;
+  if (userMenuOpen.value) {
+    opsMenuOpen.value = false;
+    commsMonitorOpen.value = false;
+  }
+}
+
+function navigateToCloud(route: string) {
+  userMenuOpen.value = false;
+  router.push(route);
+}
+
+function handleLogout() {
+  userMenuOpen.value = false;
+  logout();
 }
 
 function closeCommsMonitor(e: MouseEvent) {
@@ -222,6 +245,10 @@ function closeOpsMenu(e: MouseEvent) {
   const wrapper = document.querySelector(".ops-menu-wrapper");
   if (wrapper && !wrapper.contains(e.target as Node)) {
     opsMenuOpen.value = false;
+  }
+  const userWrapper = document.querySelector(".user-menu-wrapper");
+  if (userWrapper && !userWrapper.contains(e.target as Node)) {
+    userMenuOpen.value = false;
   }
 }
 
@@ -392,6 +419,42 @@ onUnmounted(() => {
               d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
             />
           </svg>
+        </button>
+        <!-- 云端用户菜单 -->
+        <div v-if="isAuthenticated" class="user-menu-wrapper">
+          <button class="user-btn" title="云端账户" @click="toggleUserMenu">
+            <span class="user-avatar">{{ (user?.email || user?.name || '?').charAt(0).toUpperCase() }}</span>
+            <span class="user-email">{{ user?.email || user?.name || '已登录' }}</span>
+          </button>
+          <div class="user-menu-dropdown" :class="{ show: userMenuOpen }">
+            <div class="user-menu-header">
+              <span class="user-avatar">{{ (user?.email || user?.name || '?').charAt(0).toUpperCase() }}</span>
+              <div class="user-menu-info">
+                <div class="user-menu-name">{{ user?.name || user?.sub || '用户' }}</div>
+                <div class="user-menu-email">{{ user?.email }}</div>
+              </div>
+            </div>
+            <div class="ops-menu-divider"></div>
+            <button class="ops-menu-item" @click="navigateToCloud('/cloud/devices')">
+              <span>☁️ 我的设备</span>
+            </button>
+            <button class="ops-menu-item" @click="navigateToCloud('/cloud/apps')">
+              <span>🔐 授权应用</span>
+            </button>
+            <div class="ops-menu-divider"></div>
+            <button class="ops-menu-item ops-menu-disconnect" @click="handleLogout">
+              <span>🚪 退出登录</span>
+            </button>
+          </div>
+        </div>
+        <button v-else class="login-btn" title="云端登录" @click="login">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path
+              fill="currentColor"
+              d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+            />
+          </svg>
+          <span>登录</span>
         </button>
       </div>
     </div>
@@ -713,5 +776,103 @@ onUnmounted(() => {
 .conn-tooltip :deep(.monospace) {
   font-family: var(--font-mono, monospace);
   font-size: 11px;
+}
+
+/* ---- 用户菜单 ---- */
+.user-menu-wrapper {
+  position: relative;
+}
+.user-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.user-btn:hover {
+  background: var(--bg-hover);
+}
+.user-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.user-email {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.login-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.login-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.user-menu-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 220px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 200;
+  overflow: hidden;
+}
+.user-menu-dropdown.show {
+  display: block;
+}
+.user-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.user-menu-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+.user-menu-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.user-menu-email {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

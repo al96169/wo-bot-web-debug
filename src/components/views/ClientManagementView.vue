@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from "vue";
 import type { RobotConfig } from "@/types";
-import { useWebSocket, getClientId, setOnBindShareCreated, getConnectedEndpoint } from "@/composables/useWebSocket";
+import {
+  useWebSocket,
+  getClientId,
+  setOnBindShareCreated,
+  setOnBindingProof,
+  setOnBindingProofError,
+  getConnectedEndpoint,
+} from "@/composables/useWebSocket";
 import { useRobotStore } from "@/stores/robot";
 import { useDevicesStore } from "@/stores/devices";
 import { useAppStore } from "@/stores/app";
+import { useAuth } from "@/composables/useAuth";
+import { bindDevice, getDevices } from "@/services/account";
+import type { BindingPayload } from "@/services/account";
 
 const props = defineProps<{
   editConfig: RobotConfig;
@@ -16,7 +26,8 @@ const config = props.editConfig;
 const robotStore = useRobotStore();
 const devicesStore = useDevicesStore();
 const appStore = useAppStore();
-const { requestBindList, sendBindRemove, sendBindShareCreate } = useWebSocket();
+const { user, isAuthenticated, login } = useAuth();
+const { requestBindList, sendBindRemove, sendBindShareCreate, sendBindingProofRequest } = useWebSocket();
 
 const METHOD_ICONS: Record<string, string> = {
   display: "🖥️",
@@ -138,12 +149,106 @@ function cancelRemove() {
   removeTarget.value = null;
 }
 
+// ---- 云端绑定（绑定到用户帐号） ----
+const cloudBinding = ref<"idle" | "requesting_proof" | "binding" | "success" | "error" | "checking">("idle");
+const cloudBindError = ref("");
+const cloudBoundEmail = ref("");
+const cloudBoundRobotName = ref("");
+
+const hasCloudBound = computed(() => cloudBinding.value === "success" || cloudBoundEmail.value !== "");
+
+/** 进入页面时自动查询当前设备是否已绑定到用户帐号 */
+async function checkCloudBoundStatus() {
+  if (!isAuthenticated.value) return;
+  const clientId = getClientId();
+  if (!clientId) return;
+
+  cloudBinding.value = "checking";
+  cloudBindError.value = "";
+  try {
+    const devices = await getDevices();
+    const matched = devices.find((d) => d.clientId === clientId);
+    if (matched) {
+      cloudBinding.value = "success";
+      cloudBoundEmail.value = user.value?.email || "已绑定";
+      cloudBoundRobotName.value = matched.robotName || "";
+    } else {
+      cloudBinding.value = "idle";
+    }
+  } catch (e) {
+    // 查询失败不阻塞页面，静默恢复为 idle
+    console.warn("[CloudBind] check status failed:", e);
+    cloudBinding.value = "idle";
+  }
+}
+
+async function handleCloudBind() {
+  cloudBindError.value = "";
+
+  // 前提条件 1：已登录
+  if (!isAuthenticated.value) {
+    login();
+    return;
+  }
+
+  // 前提条件 2：有 clientId（已完成本地绑定）
+  const clientId = getClientId();
+  if (!clientId) {
+    cloudBindError.value = "请先完成本地绑定";
+    cloudBinding.value = "error";
+    return;
+  }
+
+  // 前提条件 3：有 accountId
+  const accountId = user.value?.sub;
+  if (!accountId) {
+    cloudBindError.value = "无法获取用户 ID，请重新登录";
+    cloudBinding.value = "error";
+    return;
+  }
+
+  // 前提条件 4：WebSocket 已连接
+  const { ip, port } = getConnectedEndpoint();
+  if (!ip || !port) {
+    cloudBindError.value = "设备未连接";
+    cloudBinding.value = "error";
+    return;
+  }
+
+  cloudBinding.value = "requesting_proof";
+  sendBindingProofRequest(accountId, clientId);
+}
+
+// 绑定证明回调 → 提交到 Device API
+setOnBindingProof(async (payload, proof) => {
+  cloudBinding.value = "binding";
+  try {
+    const result = await bindDevice(payload as BindingPayload, proof);
+    cloudBinding.value = "success";
+    cloudBoundEmail.value = user.value?.email || "已绑定";
+    appStore.showToast(`设备已绑定到 ${result.robotName || "帐号"}`, "success");
+  } catch (e) {
+    cloudBinding.value = "error";
+    cloudBindError.value = e instanceof Error ? e.message : "绑定失败";
+    appStore.showToast(cloudBindError.value, "error");
+  }
+});
+
+setOnBindingProofError((error) => {
+  cloudBinding.value = "error";
+  cloudBindError.value = `机器人返回错误: ${error}`;
+  appStore.showToast(cloudBindError.value, "error");
+});
+
 onMounted(() => {
   requestBindList();
+  checkCloudBoundStatus();
 });
 
 onUnmounted(() => {
   setOnBindShareCreated(null);
+  setOnBindingProof(null);
+  setOnBindingProofError(null);
   if (_countdownTimer) {
     clearInterval(_countdownTimer);
     _countdownTimer = null;
@@ -156,6 +261,53 @@ onUnmounted(() => {
     <div class="view-header">
       <h3>🔗 绑定配置</h3>
       <button class="btn-refresh" title="刷新列表" @click="requestBindList">🔄</button>
+    </div>
+
+    <!-- 云端绑定（绑定到用户帐号） -->
+    <div class="cloud-bind-section">
+      <div class="cloud-bind-header">
+        <span class="cloud-bind-title">☁️ 绑定到用户帐号</span>
+        <span v-if="hasCloudBound" class="cloud-bound-badge">✓ 已绑定</span>
+      </div>
+
+      <!-- 查询中 -->
+      <div v-if="cloudBinding === 'checking'" class="cloud-bind-action">
+        <p class="cloud-bind-hint">正在查询绑定状态...</p>
+      </div>
+
+      <!-- 已绑定状态 -->
+      <div v-else-if="hasCloudBound" class="cloud-bound-info">
+        <p class="cloud-bound-email">{{ cloudBoundEmail || user?.email || "已绑定到帐号" }}</p>
+        <p v-if="cloudBoundRobotName" class="cloud-bind-hint">设备名称：{{ cloudBoundRobotName }}</p>
+        <p class="cloud-bind-hint">设备已绑定到用户帐号，可在「我的设备」中查看</p>
+      </div>
+
+      <!-- 未绑定状态 -->
+      <div v-else class="cloud-bind-action">
+        <p class="cloud-bind-hint">
+          {{
+            isAuthenticated
+              ? "将当前设备绑定到你的用户帐号，绑定后可远程管理设备"
+              : "需要先登录用户帐号才能绑定设备"
+          }}
+        </p>
+        <button
+          class="btn-cloud-bind"
+          :disabled="cloudBinding === 'requesting_proof' || cloudBinding === 'binding'"
+          @click="handleCloudBind"
+        >
+          {{
+            cloudBinding === "requesting_proof"
+              ? "正在生成绑定证明..."
+              : cloudBinding === "binding"
+                ? "正在绑定..."
+                : isAuthenticated
+                  ? "绑定到用户帐号"
+                  : "登录并绑定"
+          }}
+        </button>
+        <p v-if="cloudBinding === 'error'" class="cloud-bind-error">{{ cloudBindError }}</p>
+      </div>
     </div>
 
     <!-- 分享绑定 -->
@@ -361,6 +513,92 @@ h3 {
 .btn-refresh:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* 云端绑定 */
+.cloud-bind-section {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.cloud-bind-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cloud-bind-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cloud-bound-badge {
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--success, #22c55e);
+  border-radius: var(--radius-sm);
+}
+
+.cloud-bound-info {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cloud-bound-email {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.cloud-bind-action {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cloud-bind-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.btn-cloud-bind {
+  padding: 8px 20px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  width: fit-content;
+}
+
+.btn-cloud-bind:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn-cloud-bind:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cloud-bind-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  line-height: 1.4;
 }
 
 /* 分享绑定 */

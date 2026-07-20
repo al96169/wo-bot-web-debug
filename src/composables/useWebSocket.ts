@@ -105,6 +105,18 @@ export function setOnBindPasswordUpdate(fn: ((success: boolean, error?: string) 
   _onBindPasswordUpdate = fn;
 }
 
+/** binding_proof_response 回调（由 ClientManagementView 设置，云端绑定证明结果） */
+let _onBindingProof: ((payload: unknown, proof: string) => void) | null = null;
+export function setOnBindingProof(fn: ((payload: unknown, proof: string) => void) | null): void {
+  _onBindingProof = fn;
+}
+
+/** binding_proof_error 回调（由 ClientManagementView 设置，云端绑定证明失败） */
+let _onBindingProofError: ((error: string) => void) | null = null;
+export function setOnBindingProofError(fn: ((error: string) => void) | null): void {
+  _onBindingProofError = fn;
+}
+
 /* ---- 客户端绑定凭据管理 ---- */
 const CLIENT_ID_KEY = "wobot_client_id";
 const CLIENT_NAME_KEY = "wobot_client_name";
@@ -1046,6 +1058,20 @@ export function useWebSocket() {
         if (_onBindPasswordUpdate) _onBindPasswordUpdate(success, error);
         break;
       }
+      case "binding_proof_response": {
+        const success = Boolean(data.success);
+        if (success) {
+          const payload = data.payload;
+          const proof = String(data.proof ?? "");
+          console.log("[WS] Binding proof generated:", proof.slice(0, 32) + "...");
+          if (_onBindingProof) _onBindingProof(payload, proof);
+        } else {
+          const error = String(data.error ?? "unknown_error");
+          console.warn("[WS] Binding proof failed:", error);
+          if (_onBindingProofError) _onBindingProofError(error);
+        }
+        break;
+      }
       case "force_disconnect": {
         // 被踢下线
         console.log("[WS] Force disconnected:", data.reason);
@@ -1302,6 +1328,11 @@ export function useWebSocket() {
     _send({ type: "bind_password_update", data: updateData }, true);
   }
 
+  /** 请求云端绑定证明（用于将设备绑定到用户帐号） */
+  function sendBindingProofRequest(accountId: string, clientId: string): void {
+    _send({ type: "binding_proof_request", data: { accountId, clientId } }, true);
+  }
+
   function cleanup(): void {
     disconnect();
   }
@@ -1391,5 +1422,6 @@ export function useWebSocket() {
     sendBindPassword,
     sendBindPasswordConfig,
     sendBindPasswordUpdate,
+    sendBindingProofRequest,
   };
 }

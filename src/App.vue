@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref, watch, computed } from "vue";
+import { useRoute } from "vue-router";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useRobotStore } from "@/stores/robot";
@@ -45,6 +46,12 @@ import VersionMismatchDialog from "@/components/dialogs/VersionMismatchDialog.vu
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
 const robotStore = useRobotStore();
+const route = useRoute();
+
+// 判断当前是否为路由页面（auth/callback, cloud/*）
+const isRoutePage = computed(() =>
+  route.path.startsWith("/auth/") || route.path.startsWith("/cloud/")
+);
 const { connect, disconnect, sendSystemAction } = useWebSocket();
 const { establishConnection: establishWebRTC, close: closeWebRTC, webrtcState } = useWebRTC();
 const { startMockMode, stopMockMode } = useMock();
@@ -475,20 +482,22 @@ const viewsMap: Record<ViewName, unknown> = {
       <AppSidebar @select-device="handleSelectDevice" @add-device="handleAddDevice" />
       <main class="main-content">
         <div class="views-container">
+          <!-- 路由页面（auth/callback, cloud/*） -->
+          <router-view v-if="isRoutePage" />
           <!-- 绑定认证浮窗（覆盖层） -->
-          <div v-if="authRequired" class="bind-overlay">
+          <div v-else-if="authRequired" class="bind-overlay">
             <div class="bind-modal">
               <button class="bind-close-btn" title="关闭并断开连接" @click="closeBindPanel">×</button>
               <BindView :auth-data="authRequiredData" />
             </div>
           </div>
           <!-- 未连接 -->
-          <div v-if="appStore.connection !== 'connected' && !authRequired" class="empty-state">
+          <div v-if="!isRoutePage && appStore.connection !== 'connected' && !authRequired" class="empty-state">
             <div class="empty-state-icon">🔌</div>
             <div class="empty-state-text">请连接机器人</div>
           </div>
           <!-- 正常视图 -->
-          <KeepAlive v-if="appStore.connection === 'connected' && !authRequired">
+          <KeepAlive v-if="!isRoutePage && appStore.connection === 'connected' && !authRequired">
             <component :is="viewsMap[appStore.currentView]" />
           </KeepAlive>
         </div>

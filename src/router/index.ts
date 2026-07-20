@@ -1,10 +1,8 @@
-import { createRouter, createWebHashHistory } from "vue-router";
+import { createRouter, createWebHistory } from "vue-router";
 import type { RouteRecordRaw } from "vue-router";
+import { useAuth } from "@/composables/useAuth";
 
-/** 各视图路由。
- *  视图组件目前尚未实现，先以空壳占位，
- *  后续逐视图迁移即可替换为实际 SFC。
- */
+/** 各视图路由 */
 const routes: RouteRecordRaw[] = [
   {
     path: "/",
@@ -60,11 +58,41 @@ const routes: RouteRecordRaw[] = [
     name: "settings",
     component: () => import("../components/views/SettingsView.vue"),
   },
+  // ─── OAuth2 授权回调（无导航守卫） ───
+  {
+    path: "/auth/callback",
+    name: "authCallback",
+    component: () => import("../components/views/AuthCallbackView.vue"),
+  },
+  // ─── 云端功能（需登录） ───
+  {
+    path: "/cloud/devices",
+    name: "cloudDevices",
+    component: () => import("../components/views/CloudDevicesView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/cloud/apps",
+    name: "cloudApps",
+    component: () => import("../components/views/CloudAppsView.vue"),
+    meta: { requiresAuth: true },
+  },
 ];
 
 const router = createRouter({
-  history: createWebHashHistory(),
+  history: createWebHistory(),
   routes,
+});
+
+/** 导航守卫：检查需要认证的路由 */
+router.beforeEach((to) => {
+  if (to.meta.requiresAuth) {
+    const { isAuthenticated } = useAuth();
+    if (!isAuthenticated.value) {
+      // 未登录时重定向到首页（首页会提示登录）
+      return { name: "quickActions" };
+    }
+  }
 });
 
 export default router;
