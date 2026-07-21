@@ -335,7 +335,9 @@ const MAX_PENDING_QUEUE = 50;
 // 通用发送：优先 DataChannel；DC 未就绪时用 WebSocket；都不行则暂存队列
 function _send(frame: WsMsg, forceWs = false): void {
   const payload = JSON.stringify(frame);
-  if (!forceWs && _dc && _dc.readyState === "open") {
+  // signal 模式下 forceWs 无意义（信令 WS 不承载业务消息），统一走 DataChannel
+  const useDc = !forceWs || connectionMode.value === "signal";
+  if (useDc && _dc && _dc.readyState === "open") {
     console.log("[WS.send] via DataChannel:", frame.type, frame.data);
     _dc.send(payload);
   } else if (connectionMode.value === "direct" && _ws && _ws.readyState === WebSocket.OPEN) {
@@ -1003,6 +1005,14 @@ export function useWebSocket() {
     _signalRobotId = robotId;
     _signalReconnectCount = 0;
     appStore.connection = "connecting";
+
+    // 预填 robotId 到 robotInfo（signal 模式下 connected 消息不会触发，需手动设置）
+    const devicesStore = useDevicesStore();
+    if (!devicesStore.robotInfo) {
+      devicesStore.setRobotInfo({ robot_id: robotId, name: "", model: "", version: "", features: [] });
+    } else if (!devicesStore.robotInfo.robot_id) {
+      devicesStore.updateCurrentDeviceId(robotId);
+    }
 
     // 读取信令服务器地址
     const signalUrl = import.meta.env.VITE_SIGNAL_URL;

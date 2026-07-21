@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, onMounted, onUnmounted, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useDevicesStore } from "@/stores/devices";
 import { useDiscovery } from "@/composables/useDiscovery";
 import { useAuth } from "@/composables/useAuth";
-import { useWebSocket } from "@/composables/useWebSocket";
+import { useWebSocket, connectionMode, getStoredBinding } from "@/composables/useWebSocket";
 import type { Device } from "@/types";
+import type { CloudDevice } from "@/services/account";
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
@@ -85,13 +86,6 @@ function handleAddDevice() {
 
 /** 云端设备（已去重） */
 const cloudDevices = computed(() => devicesStore.cloudDevicesFiltered);
-
-/** 云端设备状态文本 */
-function getCloudDeviceStatus(online: boolean): { text: string; cls: string } {
-  return online
-    ? { text: "● 在线", cls: "" }
-    : { text: "● 离线", cls: "offline" };
-}
 
 /** 刷新云端设备列表 */
 async function handleRefreshCloud() {
@@ -174,15 +168,113 @@ async function handleCloudDeviceClick(device: { robotId: string; robotName: stri
   }
 }
 
-/** 统一设备状态：当前设备跟随 appStore.connection，其他设备跟随 device.online */
-function getDeviceStatus(device: Device): { text: string; cls: string } {
+/* ============================================================
+ * 设备卡片 tag 显示
+ * 按优先级：已绑定 > 已保存 > 在线状态 > 已连接
+ * ============================================================ */
+type TagVariant = "bound" | "saved" | "local" | "cloud" | "offline" | "connected";
+interface DeviceTag {
+  key: TagVariant;
+  text: string;
+  variant: TagVariant;
+}
+
+/**
+ * storedBindings 存储在 localStorage（非响应式），此处用一个版本号触发响应式刷新。
+ * - 跨标签页：监听 window storage 事件
+ * - 同标签页：绑定成功后 appStore.connection 会变化，通过 watch 触发刷新
+ */
+const bindingsVersion = ref(0);
+function refreshBindings(): void {
+  bindingsVersion.value++;
+}
+function onStorageBinding(e: StorageEvent): void {
+  if (e.key === "wobot_bindings") refreshBindings();
+}
+onMounted(() => window.addEventListener("storage", onStorageBinding));
+onUnmounted(() => window.removeEventListener("storage", onStorageBinding));
+watch(() => appStore.connection, () => refreshBindings());
+
+/** 1. 是否已绑定到当前登录用户（cloudDevices 中存在此 robotId） */
+function isDeviceBoundToUser(device: Device): boolean {
+  const rid = device.robotId || device.id;
+  if (!rid) return false;
+  return devicesStore.cloudDevices.some((c) => c.robotId === rid);
+}
+
+/** 2. 是否已保存到已连接记录（localStorage storedBindings） */
+function isDeviceSaved(device: Device): boolean {
+  void bindingsVersion.value; // 响应式依赖
+  return !!getStoredBinding(device.robotId || "", device.ip, device.port);
+}
+
+/** 3. 在线状态 tag：本地在线（优先）/ 云端在线 / 离线 */
+function getOnlineStatusTag(device: Device): DeviceTag {
   const isCurrent = isCurrentDevice(device);
-  if (isCurrent) {
-    if (appStore.connection === "connected") return { text: "● 已连接", cls: "" };
-    if (appStore.connection === "connecting") return { text: "● 连接中...", cls: "" };
-    if (appStore.connection === "error") return { text: "● 连接错误", cls: "offline" };
+  // 当前已连接设备：依据连接模式判定在线类型
+  if (isCurrent && appStore.connection === "connected") {
+    if (connectionMode.value === "signal") {
+      return { key: "cloud", text: "云端在线", variant: "cloud" };
+    }
+    return { key: "local", text: "本地在线", variant: "local" };
   }
-  return device.online ? { text: "● 在线", cls: "" } : { text: "● 离线", cls: "offline" };
+  // 本地在线：直连可达（device.online）或 mDNS 发现
+  const isLocalOnline =
+    device.online ||
+    devicesStore.discovered.some(
+      (d) => `${d.ip}:${d.port}` === `${device.ip}:${device.port}`,
+    );
+  if (isLocalOnline) {
+    return { key: "local", text: "本地在线", variant: "local" };
+  }
+  // 云端在线：信令服务器返回在线
+  const rid = device.robotId || device.id;
+  const cloudDev = rid ? devicesStore.cloudDevices.find((c) => c.robotId === rid) : undefined;
+  if (cloudDev && cloudDev.status === "online") {
+    return { key: "cloud", text: "云端在线", variant: "cloud" };
+  }
+  return { key: "offline", text: "离线", variant: "offline" };
+}
+
+/** 4. 是否已连接（当前设备匹配且 connection === "connected"） */
+function isDeviceConnected(device: Device): boolean {
+  return isCurrentDevice(device) && appStore.connection === "connected";
+}
+
+/** 本地/发现设备卡片 tag 列表（按优先级） */
+function getDeviceTags(device: Device): DeviceTag[] {
+  const tags: DeviceTag[] = [];
+  if (isDeviceBoundToUser(device)) tags.push({ key: "bound", text: "已绑定", variant: "bound" });
+  if (isDeviceSaved(device)) tags.push({ key: "saved", text: "已保存", variant: "saved" });
+  tags.push(getOnlineStatusTag(device));
+  if (isDeviceConnected(device)) tags.push({ key: "connected", text: "已连接", variant: "connected" });
+  return tags;
+}
+
+/** 云端设备卡片 tag 列表 */
+function getCloudDeviceTags(device: CloudDevice): DeviceTag[] {
+  const tags: DeviceTag[] = [];
+  // 云端设备本身就是当前帐号绑定的
+  tags.push({ key: "bound", text: "已绑定", variant: "bound" });
+  // 是否已保存到已连接记录
+  void bindingsVersion.value;
+  if (getStoredBinding(device.robotId)) {
+    tags.push({ key: "saved", text: "已保存", variant: "saved" });
+  }
+  // 在线状态
+  if (device.status === "online") {
+    tags.push({ key: "cloud", text: "云端在线", variant: "cloud" });
+  } else {
+    tags.push({ key: "offline", text: "离线", variant: "offline" });
+  }
+  // 已连接：当前设备 robotId 匹配且已连接
+  const cd = devicesStore.currentDevice;
+  const isConnected =
+    !!cd &&
+    (cd.robotId === device.robotId || cd.id === device.robotId) &&
+    appStore.connection === "connected";
+  if (isConnected) tags.push({ key: "connected", text: "已连接", variant: "connected" });
+  return tags;
 }
 </script>
 
@@ -203,15 +295,16 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
           >
             <div class="device-card-header">
               <span class="device-name">{{ device.name }}</span>
-              <span
-                v-if="device.id === currentDeviceKeys.id || `${device.ip}:${device.port}` === currentDeviceKeys.key"
-                class="device-badge"
-                >当前设备</span
-              >
             </div>
             <div class="device-ip">{{ device.ip }}:{{ device.port }}</div>
-            <div class="device-status-line" :class="getDeviceStatus(device).cls">
-              {{ getDeviceStatus(device).text }}
+            <div class="device-tags">
+              <span
+                v-for="tag in getDeviceTags(device)"
+                :key="tag.key"
+                class="dev-tag"
+                :class="[`tag-${tag.variant}`, { 'tag-pulse': tag.variant === 'connected' }]"
+                >{{ tag.text }}</span
+              >
             </div>
           </div>
         </div>
@@ -245,8 +338,14 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
               <span class="cloud-badge">☁️</span>
             </div>
             <div class="device-ip">{{ device.robotId.slice(0, 16) }}...</div>
-            <div class="device-status-line" :class="getCloudDeviceStatus(device.status === 'online').cls">
-              {{ getCloudDeviceStatus(device.status === 'online').text }}
+            <div class="device-tags">
+              <span
+                v-for="tag in getCloudDeviceTags(device)"
+                :key="tag.key"
+                class="dev-tag"
+                :class="[`tag-${tag.variant}`, { 'tag-pulse': tag.variant === 'connected' }]"
+                >{{ tag.text }}</span
+              >
             </div>
           </div>
           <div
@@ -279,15 +378,16 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
           >
             <div class="device-card-header">
               <span class="device-name">{{ device.name }}</span>
-              <span
-                v-if="device.id === currentDeviceKeys.id || `${device.ip}:${device.port}` === currentDeviceKeys.key"
-                class="device-badge"
-                >当前设备</span
-              >
             </div>
             <div class="device-ip">{{ device.ip }}:{{ device.port }}</div>
-            <div class="device-status-line" :class="getDeviceStatus(device).cls">
-              {{ getDeviceStatus(device).text }}
+            <div class="device-tags">
+              <span
+                v-for="tag in getDeviceTags(device)"
+                :key="tag.key"
+                class="dev-tag"
+                :class="[`tag-${tag.variant}`, { 'tag-pulse': tag.variant === 'connected' }]"
+                >{{ tag.text }}</span
+              >
             </div>
           </div>
           <div
@@ -415,13 +515,56 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
   white-space: nowrap;
   max-width: 150px;
 }
-.device-badge {
+.device-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.dev-tag {
+  display: inline-flex;
+  align-items: center;
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  background: rgba(0, 212, 255, 0.2);
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* 已绑定 / 本地在线：绿色 */
+.tag-bound,
+.tag-local {
+  background: rgba(0, 255, 136, 0.16);
+  color: var(--success);
+}
+/* 已保存 / 云端在线：蓝色 */
+.tag-saved,
+.tag-cloud {
+  background: rgba(0, 212, 255, 0.16);
   color: var(--accent);
-  flex-shrink: 0;
+}
+/* 离线：灰色 */
+.tag-offline {
+  background: rgba(128, 128, 136, 0.18);
+  color: var(--text-muted);
+}
+/* 已连接：绿色 + 脉冲动画 */
+.tag-connected {
+  background: rgba(0, 255, 136, 0.22);
+  color: var(--success);
+  box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.45);
+}
+.tag-pulse {
+  animation: tag-pulse 1.6s ease-in-out infinite;
+}
+@keyframes tag-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 .cloud-badge {
   font-size: 12px;
@@ -445,14 +588,6 @@ function getDeviceStatus(device: Device): { text: string; cls: string } {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.device-status-line {
-  font-size: 11px;
-  margin-top: 4px;
-  color: var(--success);
-}
-.device-status-line.offline {
-  color: var(--danger);
 }
 .scan-indicator {
   display: flex;

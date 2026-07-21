@@ -160,14 +160,16 @@ const hasCloudBound = computed(() => cloudBinding.value === "success" || cloudBo
 /** 进入页面时自动查询当前设备是否已绑定到用户帐号 */
 async function checkCloudBoundStatus() {
   if (!isAuthenticated.value) return;
-  const clientId = getClientId();
-  if (!clientId) return;
 
   cloudBinding.value = "checking";
   cloudBindError.value = "";
   try {
     const devices = await getDevices();
-    const matched = devices.find((d) => d.clientId === clientId);
+    // 优先用当前连接的 robotId 匹配，回退到 clientId 匹配
+    const currentRobotId = devicesStore.robotInfo?.robot_id || "";
+    const matched = currentRobotId
+      ? devices.find((d) => d.robotId === currentRobotId)
+      : devices.find((d) => d.clientId === getClientId());
     if (matched) {
       cloudBinding.value = "success";
       cloudBoundEmail.value = user.value?.email || "已绑定";
