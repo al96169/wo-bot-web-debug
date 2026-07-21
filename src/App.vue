@@ -15,6 +15,7 @@ import {
   setPendingShareCode,
   getStoredBinding,
 } from "@/composables/useWebSocket";
+import { connectionMode } from "@/composables/useWebSocket";
 import { useWebRTC } from "@/composables/useWebRTC";
 import { useMock } from "@/composables/useMock";
 import { useDiscovery } from "@/composables/useDiscovery";
@@ -54,7 +55,7 @@ const route = useRoute();
 const isRoutePage = computed(() =>
   route.path.startsWith("/auth/") || route.path.startsWith("/cloud/")
 );
-const { connect, disconnect, sendSystemAction } = useWebSocket();
+const { connect, disconnect, sendSystemAction, connectViaSignal } = useWebSocket();
 const { establishConnection: establishWebRTC, close: closeWebRTC, webrtcState } = useWebRTC();
 const { startMockMode, stopMockMode } = useMock();
 const { startScan: startDiscoveryScan } = useDiscovery();
@@ -322,6 +323,27 @@ function connectDirectly(device: Device) {
   // 确保关闭 Mock 模式
   stopMockMode();
   appStore.mockMode = false;
+
+  // 检查本地可达性：如果设备不在 mDNS 发现列表中，且已登录且有 robotId，走云端远控
+  const isLocallyReachable = devicesStore.discovered.some(
+    (d) =>
+      d.robotId === targetDevice.robotId ||
+      `${d.ip}:${d.port}` === `${targetDevice.ip}:${targetDevice.port}`,
+  );
+  if (!isLocallyReachable && isAuthenticated.value && targetDevice.robotId) {
+    console.log("[App] 本地不可达，走云端远控:", targetDevice.robotId);
+    appStore.showToast("本地不可达，正在通过云端连接设备...", "info");
+    try {
+      connectViaSignal(targetDevice.robotId);
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error("[App] connectViaSignal 异常:", errMsg);
+      appStore.connection = "error";
+      appStore.showToast(`云端连接失败：${errMsg}`, "error");
+    }
+    return;
+  }
+
   try {
     console.log("[App] 清理 WebRTC, 发起 WebSocket 连接");
     closeWebRTC(); // 先清理旧 WebRTC 状态
