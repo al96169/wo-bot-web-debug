@@ -334,6 +334,7 @@ function connectDirectly(device: Device) {
     console.log("[App] 本地不可达，走云端远控:", targetDevice.robotId);
     appStore.showToast("本地不可达，正在通过云端连接设备...", "info");
     try {
+      closeWebRTC(); // 清理旧直连 WebRTC 资源（pc/dc/videoStream/webrtcState）
       connectViaSignal(targetDevice.robotId);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);

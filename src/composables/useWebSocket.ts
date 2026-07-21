@@ -650,6 +650,14 @@ export function useWebSocket() {
       _signalPc = null;
     }
     setDataChannel(null);
+    // 同步重置 useWebRTC 模块级 refs（防止直连→信令切换时旧资源残留）
+    const webrtc = useWebRTC();
+    webrtc.connectionState.value = "new";
+    webrtc.iceConnectionState.value = "new";
+    webrtc.signalingState.value = "stable";
+    webrtc.videoStream0.value = null;
+    webrtc.videoStream1.value = null;
+    webrtc.videoPlaying.value = false;
   }
 
   /** 设置信令模式 DataChannel 的事件处理器 */
@@ -660,12 +668,17 @@ export function useWebSocket() {
       appStore.connection = "connected";
       appStore.setSSHConnected(true);
       appStore.showToast("云端连接已建立", "success");
+      // 标记已绑定/已授权（信令模式下 JWT 已验证设备归属，无需额外绑定）
+      isBound.value = true;
+      authRequired.value = false;
       // 注册到 useWebSocket 模块级引用，使 _send() 可以通过 DC 发送
       setDataChannel(channel);
       // 订阅设备状态
       channel.send(JSON.stringify({ type: "subscribe", data: { events: ["status"] } }));
       // 请求机器人状态（机器人支持 get_status，响应中包含 features）
       channel.send(JSON.stringify({ type: "get_status" }));
+      // 请求摄像头列表（与直连模式 connected handler 一致）
+      requestCameraStatus();
       // 启动心跳（信令模式通过 DataChannel 发送 ping）
       startHeartbeat();
     };
@@ -763,6 +776,8 @@ export function useWebSocket() {
 
         event.track.onunmute = () => {
           if (event.track.kind === "video") {
+            _signalMediaReceived = true;
+            clearTimeout(mediaTimeoutTimer);
             webrtc.webrtcState.value = "connected";
             appStore.setSSHConnected(true);
             console.log("[WS-Signal] 视频轨数据到达, webrtcState → connected");
@@ -790,11 +805,37 @@ export function useWebSocket() {
         console.log("[WS-Signal] ICE state:", iceState);
         if (iceState === "connected" || iceState === "completed") {
           webrtc.webrtcState.value = "connected";
+          _signalMediaReceived = false; // 重置媒体标志
         } else if (iceState === "failed") {
           webrtc.webrtcState.value = "failed";
           appStore.setSSHConnected(false);
         }
       };
+
+      // ICE fallback：5 秒内 ICE 状态未变为 connected/completed，尝试触发重连
+      const iceFallbackTimer = setTimeout(() => {
+        if (peerConnection !== _signalPc) return;
+        const iceState = peerConnection.iceConnectionState;
+        if (iceState !== "connected" && iceState !== "completed" && iceState !== "failed") {
+          console.warn("[WS-Signal] ICE fallback: 状态卡在", iceState, "尝试 restart ICE");
+          try {
+            peerConnection.restartIce();
+          } catch {
+            /* ignore */
+          }
+        }
+      }, 5000);
+
+      // 媒体超时：DC open 后 8 秒内未收到视频轨数据，标记失败
+      let _signalMediaReceived = false;
+      const mediaTimeoutTimer = setTimeout(() => {
+        if (peerConnection !== _signalPc) return;
+        if (!_signalMediaReceived) {
+          console.warn("[WS-Signal] 媒体超时: 8 秒内未收到视频数据");
+          webrtc.webrtcState.value = "failed";
+          appStore.showToast("视频流未到达，请检查网络", "warn");
+        }
+      }, 8000);
 
       peerConnection.onconnectionstatechange = () => {
         if (peerConnection !== _signalPc) return;
@@ -1942,11 +1983,13 @@ export function useWebSocket() {
       combined.set(binaryData, 4 + headerBytes.byteLength);
 
       // 电话模式优先 DataChannel（低延迟），录音模式走 WebSocket（无大小限制）
-      if (preferDataChannel && _dc && _dc.readyState === "open") {
+      // 信令模式下 forceWs 无意义，统一走 DataChannel（与 _send 逻辑一致）
+      const shouldUseDc = preferDataChannel || connectionMode.value === "signal";
+      if (shouldUseDc && _dc && _dc.readyState === "open") {
         _dc.send(combined.buffer);
         return true;
       }
-      if (_ws && _ws.readyState === WebSocket.OPEN) {
+      if (connectionMode.value === "direct" && _ws && _ws.readyState === WebSocket.OPEN) {
         _ws.send(combined.buffer);
         return true;
       }
