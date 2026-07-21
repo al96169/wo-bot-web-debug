@@ -236,13 +236,13 @@ function getOnlineStatusTag(device: Device): DeviceTag {
     }
     return { key: "local", text: "本地在线", variant: "local" };
   }
-  // 本地在线：仅当 mDNS 发现列表中有此设备才算本地在线
-  // （device.online 可能是 localStorage 中的旧值，跨网络下不可信）
-  const isLocalOnline = devicesStore.discovered.some(
-    (d) =>
-      d.robotId === device.robotId ||
-      `${d.ip}:${d.port}` === `${device.ip}:${device.port}`,
-  );
+  // 本地在线：mDNS 发现列表中有此设备，或设备有有效 ip:port（已保存设备可能 mDNS 未发现但仍可达）
+  const isLocalOnline =
+    devicesStore.discovered.some(
+      (d) =>
+        d.robotId === device.robotId ||
+        `${d.ip}:${d.port}` === `${device.ip}:${device.port}`,
+    ) || (device.ip && device.port > 0);
   if (isLocalOnline) {
     return { key: "local", text: "本地在线", variant: "local" };
   }

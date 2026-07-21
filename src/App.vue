@@ -324,17 +324,14 @@ function connectDirectly(device: Device) {
   stopMockMode();
   appStore.mockMode = false;
 
-  // 检查本地可达性：如果设备不在 mDNS 发现列表中，且已登录且有 robotId，走云端远控
-  const isLocallyReachable = devicesStore.discovered.some(
-    (d) =>
-      d.robotId === targetDevice.robotId ||
-      `${d.ip}:${d.port}` === `${targetDevice.ip}:${targetDevice.port}`,
-  );
-  if (!isLocallyReachable && isAuthenticated.value && targetDevice.robotId) {
-    console.log("[App] 本地不可达，走云端远控:", targetDevice.robotId);
-    appStore.showToast("本地不可达，正在通过云端连接设备...", "info");
+  // 设备有有效 ip:port → 优先直连（不依赖 mDNS 发现列表）
+  // 仅当设备无 ip:port（纯云端设备）或直连失败后才走云端远控
+  const hasLocalAddress = targetDevice.ip && targetDevice.port > 0;
+  if (!hasLocalAddress && isAuthenticated.value && targetDevice.robotId) {
+    console.log("[App] 无本地地址，走云端远控:", targetDevice.robotId);
+    appStore.showToast("正在通过云端连接设备...", "info");
     try {
-      closeWebRTC(); // 清理旧直连 WebRTC 资源（pc/dc/videoStream/webrtcState）
+      closeWebRTC();
       connectViaSignal(targetDevice.robotId);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
