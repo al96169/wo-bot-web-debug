@@ -104,8 +104,28 @@ async function handleCloudDeviceClick(device: { robotId: string; robotName: stri
       (d) => d.robotId === device.robotId || d.id === device.robotId,
     );
     if (localMatch) {
-      handleDeviceClick(localMatch);
-      return;
+      // 验证本地可达性：mDNS 发现列表中有此设备才算本地在线
+      const isLocallyReachable = devicesStore.discovered.some(
+        (d) => d.robotId === device.robotId || `${d.ip}:${d.port}` === `${localMatch.ip}:${localMatch.port}`,
+      );
+      if (isLocallyReachable) {
+        handleDeviceClick(localMatch);
+        return;
+      }
+      // 本地不可达（如跨网络），走云端远控
+      if (isAuthenticated.value && device.robotId) {
+        appStore.showToast("本地不可达，正在通过云端连接设备...", "info");
+        devicesStore.setCurrentDevice({
+          id: device.robotId,
+          name: device.robotName || "云端设备",
+          ip: "",
+          port: 0,
+          robotId: device.robotId,
+          online: true,
+        });
+        connectViaSignal(device.robotId);
+        return;
+      }
     }
 
     // 2. 在已发现设备中查找（按 robotId 或名称匹配）
@@ -145,8 +165,6 @@ async function handleCloudDeviceClick(device: { robotId: string; robotName: stri
     // 5. 仍未找到 — 如果已登录且有 robotId，自动切换到云端远控模式
     if (isAuthenticated.value && device.robotId) {
       appStore.showToast("正在通过云端连接设备...", "info");
-      // 构造云端 Device 并 setCurrentDevice，保证连接流程中有当前设备，
-      // 使 sidebar 高亮、设备状态、robotInfo 同步等逻辑可用
       devicesStore.setCurrentDevice({
         id: device.robotId,
         name: device.robotName || "云端设备",
@@ -218,12 +236,13 @@ function getOnlineStatusTag(device: Device): DeviceTag {
     }
     return { key: "local", text: "本地在线", variant: "local" };
   }
-  // 本地在线：直连可达（device.online）或 mDNS 发现
-  const isLocalOnline =
-    device.online ||
-    devicesStore.discovered.some(
-      (d) => `${d.ip}:${d.port}` === `${device.ip}:${device.port}`,
-    );
+  // 本地在线：仅当 mDNS 发现列表中有此设备才算本地在线
+  // （device.online 可能是 localStorage 中的旧值，跨网络下不可信）
+  const isLocalOnline = devicesStore.discovered.some(
+    (d) =>
+      d.robotId === device.robotId ||
+      `${d.ip}:${d.port}` === `${device.ip}:${device.port}`,
+  );
   if (isLocalOnline) {
     return { key: "local", text: "本地在线", variant: "local" };
   }
