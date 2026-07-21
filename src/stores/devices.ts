@@ -162,15 +162,33 @@ export const useDevicesStore = defineStore("devices", {
     /** 直接设置当前设备（App.vue 连接流程使用），自动补入设备列表 */
     setCurrentDevice(device: Device | null): void {
       console.log("[DevicesStore] setCurrentDevice:", device?.name, device?.id, device?.ip);
-      // 如果设备不在列表中，自动添加
       if (device) {
-        const exists = this.devices.some((d) => d.id === device.id || (d.ip === device.ip && d.port === device.port));
-        if (!exists) {
-          console.log("[DevicesStore] setCurrentDevice: 设备不在列表中，自动添加");
+        // 优先按 id 匹配，其次按 robotId 匹配（云端和本地设备可能 id 不同但 robotId 相同）
+        const existing = this.devices.find(
+          (d) => d.id === device.id || (device.robotId && d.robotId === device.robotId),
+        );
+        if (existing) {
+          // 更新已有设备的属性，保留原有的 ip:port（防止云端连接覆盖本地地址）
+          if (device.ip && device.port > 0) {
+            existing.ip = device.ip;
+            existing.port = device.port;
+          }
+          if (device.name && device.name !== existing.name) {
+            existing.name = device.name;
+          }
+          if (device.robotId && !existing.robotId) {
+            existing.robotId = device.robotId;
+          }
+          existing.online = device.online;
+          this.currentDevice = existing;
+        } else {
+          // 新设备，添加到列表
           this.devices.push(device);
+          this.currentDevice = device;
         }
+      } else {
+        this.currentDevice = null;
       }
-      this.currentDevice = device;
       this.saveDevices();
     },
 
