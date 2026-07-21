@@ -560,10 +560,16 @@ export function useWebSocket() {
         return;
       }
       // 直连模式: 通过 WebSocket 直接发送 ping
-      // 信令模式: 通过 DataChannel 发送 ping（信令服务器不处理业务 ping）
+      // 信令模式: 通过 DataChannel 发送业务 ping + 向信令 WS 发送 keepalive
+      //   （信令服务器不处理业务 ping，但需要 keepalive 防止空闲超时关闭 WS）
       if (connectionMode.value === "signal") {
+        // DataChannel 心跳（业务层）
         if (_dc && _dc.readyState === "open") {
           _dc.send(JSON.stringify({ type: "ping", data: { ts: Date.now() } }));
+        }
+        // 信令 WS 保活（防止服务端空闲超时）
+        if (_ws && _ws.readyState === WebSocket.OPEN) {
+          _ws.send(JSON.stringify({ type: "ping" }));
         }
         // DC 未就绪时跳过本轮心跳（不触发超时）
       } else {
@@ -656,6 +662,9 @@ export function useWebSocket() {
       setDataChannel(channel);
       // 订阅设备状态
       channel.send(JSON.stringify({ type: "subscribe", data: { events: ["status"] } }));
+      // 请求机器人信息（复用直连 connected 握手语义，触发 robot_info/features/status 推送）
+      // 机器人若不识别 get_info，上方 subscribe 后仍会推送 status（status 中含 features）
+      channel.send(JSON.stringify({ type: "get_info" }));
       // 启动心跳（信令模式通过 DataChannel 发送 ping）
       startHeartbeat();
     };
@@ -663,9 +672,19 @@ export function useWebSocket() {
     channel.onmessage = (event: MessageEvent) => {
       // DataChannel 承载业务消息，复用 handleSignalingMessage 处理逻辑
       try {
-        const frame: WsMsg = JSON.parse(event.data as string);
+        const frame = JSON.parse(event.data as string) as WsMsg;
         lastMessage.value = frame;
-        handleSignalingMessage(frame);
+        // 解包 response 信封：后端 DC 响应格式为
+        // { type: "response", data: { type: "xxx", data: {...} } }
+        // （与 useWebRTC.ts dispatchDataChannelMessage 一致）
+        let msgType = frame.type;
+        let data = frame.data ?? {};
+        if (msgType === "response" && typeof data === "object" && data !== null && "type" in data) {
+          msgType = String((data as Record<string, unknown>).type);
+          data = ((data as Record<string, unknown>).data as Record<string, unknown>) ?? {};
+        }
+        // 构造解包后的 frame 传给 handleSignalingMessage
+        handleSignalingMessage({ ...frame, type: msgType, data });
       } catch {
         /* 非 JSON 消息忽略 */
       }
@@ -855,6 +874,12 @@ export function useWebSocket() {
             answerDesc = new RTCSessionDescription(sdp as RTCSessionDescriptionInit);
           } else {
             console.warn("[WS-Signal] answer 消息缺少 sdp 字段");
+            return;
+          }
+          // 状态守卫：仅在 have-local-offer 状态下接受 answer，
+          // 避免重复/过期的 setRemoteDescription 触发 InvalidStateError
+          if (_signalPc.signalingState !== "have-local-offer") {
+            console.warn("[WS-Signal] answer 丢弃, signalingState:", _signalPc.signalingState);
             return;
           }
           _signalPc.setRemoteDescription(answerDesc).then(() => {
@@ -1063,17 +1088,24 @@ export function useWebSocket() {
         console.log("[WS-Signal] onclose 忽略: 旧 socket (已被替换)");
         return;
       }
-      stopHeartbeat();
-      // 清理 WebRTC 资源
-      cleanupSignalWebRTC();
       // 服务端明确拒绝 (code >= 4000): 不重连
       if (!_intentionalDisconnect && event.code >= 4000) {
         console.log("[WS-Signal] 服务端拒绝连接, code:", event.code);
         _intentionalDisconnect = true;
       }
-      appStore.connection = "disconnected";
-      appStore.setSSHConnected(false);
-      maybeReconnectSignal(robotId);
+      // 若 DataChannel 仍存活，说明 P2P 业务通道未断，只重连信令 WS，
+      // 不重置连接状态、不清理 WebRTC、不停心跳，避免业务中断与 UI 抖动
+      if (_dc && _dc.readyState === "open") {
+        console.log("[WS-Signal] 信令 WS 断开，DataChannel 仍存活，尝试重连信令通道...");
+        maybeReconnectSignal(robotId);
+      } else {
+        // DataChannel 也断了，完整重置并重连
+        stopHeartbeat();
+        cleanupSignalWebRTC();
+        appStore.connection = "disconnected";
+        appStore.setSSHConnected(false);
+        maybeReconnectSignal(robotId);
+      }
     };
   }
 
@@ -1167,12 +1199,35 @@ export function useWebSocket() {
         break;
 
       // ---- 业务响应 ----
+      case "robot_info": {
+        // 机器人信息（signal 模式 DC get_info 响应，或直连推送）
+        const features = Array.isArray(data.features) ? (data.features as string[]) : _remoteFeatures.value;
+        devicesStore.setRobotInfo({
+          robot_id: String(data.robot_id ?? devicesStore.robotInfo?.robot_id ?? ""),
+          name: String(data.name ?? devicesStore.robotInfo?.name ?? ""),
+          model: String(data.model ?? devicesStore.robotInfo?.model ?? ""),
+          version: String(data.version ?? devicesStore.robotInfo?.version ?? ""),
+          features,
+        });
+        _remoteFeatures.value = features;
+        break;
+      }
       case "features_update": {
         const features = data.features as string[] | undefined;
         if (Array.isArray(features)) {
           _remoteFeatures.value = features;
+          // signal 模式下 robotInfo 可能为 null（未收到 connected/robot_info），
+          // 此时初始化空对象以承载 features，避免功能列表丢失
           if (devicesStore.robotInfo) {
             devicesStore.robotInfo.features = features;
+          } else {
+            devicesStore.setRobotInfo({
+              robot_id: "",
+              name: "",
+              model: "",
+              version: "",
+              features,
+            });
           }
         }
         break;
@@ -1206,8 +1261,17 @@ export function useWebSocket() {
         if (Array.isArray(data.features) && data.features.length > 0) {
           _remoteFeatures.value = data.features as string[];
           // 同步到 devicesStore，确保导航栏等功能过滤能实时响应
+          // signal 模式下 robotInfo 可能为 null（未收到 connected/robot_info），初始化空对象再赋值
           if (devicesStore.robotInfo) {
             devicesStore.robotInfo.features = data.features as string[];
+          } else {
+            devicesStore.setRobotInfo({
+              robot_id: "",
+              name: "",
+              model: "",
+              version: "",
+              features: data.features as string[],
+            });
           }
         }
         // 从 status 中同步服务状态

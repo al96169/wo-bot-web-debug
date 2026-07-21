@@ -151,6 +151,16 @@ async function handleCloudDeviceClick(device: { robotId: string; robotName: stri
     // 5. 仍未找到 — 如果已登录且有 robotId，自动切换到云端远控模式
     if (isAuthenticated.value && device.robotId) {
       appStore.showToast("正在通过云端连接设备...", "info");
+      // 构造云端 Device 并 setCurrentDevice，保证连接流程中有当前设备，
+      // 使 sidebar 高亮、设备状态、robotInfo 同步等逻辑可用
+      devicesStore.setCurrentDevice({
+        id: device.robotId,
+        name: device.robotName || "云端设备",
+        ip: "",
+        port: 0,
+        robotId: device.robotId,
+        online: true,
+      });
       connectViaSignal(device.robotId);
       return;
     }

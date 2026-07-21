@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
+import { connectionMode } from "./useWebSocket";
 
 /* ============================================================
  * wo-bot-web-debug - 设备发现
@@ -81,6 +82,11 @@ export function useDiscovery() {
 
   /** 开始扫描 */
   async function startScan(): Promise<void> {
+    // signal 模式（云端远控）下跳过本地探活，避免无意义的 ws://127.0.0.1:8765 探测
+    if (connectionMode.value === "signal") {
+      console.log("[Discovery] Signal mode, skipping local scan");
+      return;
+    }
     if (scanning.value || appStore.mockMode) return;
     scanning.value = true;
     appStore.scanning = true;
