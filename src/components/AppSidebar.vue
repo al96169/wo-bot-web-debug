@@ -186,6 +186,48 @@ async function handleCloudDeviceClick(device: { robotId: string; robotName: stri
   }
 }
 
+/**
+ * 合并设备列表：本地已保存设备 + 云端绑定设备，按 robotId/id 去重
+ * - 同一设备同时存在于本地和云端时，保留本地设备（有 ip:port 可直连），仅显示一次
+ * - 纯云端设备（本地未保存）转换为 Device 形态（ip/port 为空），点击走云端连接
+ * - tag 统一使用 getDeviceTags；"已绑定"由 isDeviceBoundToUser 自动判定
+ *   （本地设备若同时绑定到云端，也会显示"已绑定"标签）
+ */
+const mergedDevices = computed<Device[]>(() => {
+  const localDevices = devicesStore.devices;
+  // 本地设备已覆盖的 robotId/id（去重时优先保留有 ip:port 的本地记录）
+  const localKeys = new Set<string>();
+  for (const d of localDevices) {
+    const rid = d.robotId || d.id;
+    if (rid) localKeys.add(rid);
+  }
+  const merged: Device[] = [...localDevices];
+  for (const c of cloudDevices.value) {
+    if (localKeys.has(c.robotId)) continue; // 去重：本地已存在则跳过
+    merged.push({
+      id: c.robotId,
+      name: c.robotName || c.robotId.slice(0, 12),
+      ip: "",
+      port: 0,
+      online: c.status === "online",
+      robotId: c.robotId,
+    });
+  }
+  return merged;
+});
+
+/** 合并设备点击：有 ip:port 走本地连接，否则走云端连接 */
+function handleMergedDeviceClick(device: Device) {
+  if (device.ip && device.port > 0) {
+    handleDeviceClick(device);
+  } else {
+    handleCloudDeviceClick({
+      robotId: device.robotId || device.id,
+      robotName: device.name,
+    });
+  }
+}
+
 /* ============================================================
  * 设备卡片 tag 显示
  * 按优先级：已绑定 > 已保存 > 在线状态 > 已连接
@@ -304,18 +346,21 @@ function getCloudDeviceTags(device: CloudDevice): DeviceTag[] {
         <h3 class="section-title">设备列表</h3>
         <div class="device-list">
           <div
-            v-for="device in devicesStore.devices"
+            v-for="device in mergedDevices"
             :key="device.id"
             class="device-card"
             :class="{
               active: device.id === currentDeviceKeys.id || `${device.ip}:${device.port}` === currentDeviceKeys.key,
             }"
-            @click="handleDeviceClick(device)"
+            @click="handleMergedDeviceClick(device)"
           >
             <div class="device-card-header">
               <span class="device-name">{{ device.name }}</span>
             </div>
-            <div class="device-ip">{{ device.ip }}:{{ device.port }}</div>
+            <div class="device-ip">
+              <template v-if="device.ip && device.port">{{ device.ip }}:{{ device.port }}</template>
+              <template v-else>云端设备</template>
+            </div>
             <div class="device-tags">
               <span
                 v-for="tag in getDeviceTags(device)"
@@ -326,53 +371,12 @@ function getCloudDeviceTags(device: CloudDevice): DeviceTag[] {
               >
             </div>
           </div>
-        </div>
-      </div>
-      <!-- 云端设备（当前帐号绑定的设备） -->
-      <div v-if="isAuthenticated" class="cloud-section">
-        <div class="section-header">
-          <h3 class="section-title">☁️ 我的设备</h3>
-          <button
-            class="rescan-btn"
-            :disabled="devicesStore.loadingCloud"
-            title="刷新云端设备列表"
-            @click="handleRefreshCloud"
-          >
-            {{ devicesStore.loadingCloud ? "..." : "刷新" }}
-          </button>
-        </div>
-        <div v-if="devicesStore.loadingCloud" class="scan-indicator">
-          <span class="spinner"></span> 加载中...
-        </div>
-        <div v-else class="device-list">
           <div
-            v-for="device in cloudDevices"
-            :key="device.robotId"
-            class="device-card cloud-device-card"
-            :class="{ disabled: connectingCloud }"
-            @click="handleCloudDeviceClick(device)"
-          >
-            <div class="device-card-header">
-              <span class="device-name">{{ device.robotName || device.robotId.slice(0, 12) }}</span>
-              <span class="cloud-badge">☁️</span>
-            </div>
-            <div class="device-ip">{{ device.robotId.slice(0, 16) }}...</div>
-            <div class="device-tags">
-              <span
-                v-for="tag in getCloudDeviceTags(device)"
-                :key="tag.key"
-                class="dev-tag"
-                :class="[`tag-${tag.variant}`, { 'tag-pulse': tag.variant === 'connected' }]"
-                >{{ tag.text }}</span
-              >
-            </div>
-          </div>
-          <div
-            v-if="cloudDevices.length === 0"
+            v-if="mergedDevices.length === 0"
             class="empty-state"
             style="padding: 16px; font-size: 12px"
           >
-            暂无云端设备
+            暂无设备，请扫描发现设备
           </div>
         </div>
       </div>
