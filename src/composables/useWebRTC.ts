@@ -368,6 +368,10 @@ export function useWebRTC() {
         // 监听 track 状态变化（mute/ended 是画面冻结的关键信号）
         event.track.onmute = () => {
           console.warn("[WebRTC:Track] track muted:", event.track.id, "readyState:", event.track.readyState);
+          // 标记视频停止播放，允许媒体超时检测触发重连
+          if (event.track.kind === "video") {
+            _videoPlaying = false;
+          }
         };
         event.track.onunmute = () => {
           console.log("[WebRTC:Track] track unmuted:", event.track.id, "readyState:", event.track.readyState);
