@@ -8,7 +8,10 @@ import type {
   AuthRequiredData,
   BindingInfo,
   BindingMethod,
+  CameraPhoto,
   DanceInfo,
+  GalleryItem,
+  GalleryStorage,
   LogEntry,
   Module,
   MusicStatus,
@@ -364,6 +367,31 @@ function _send(frame: WsMsg, forceWs = false): void {
     );
     _pendingQueue.push(payload);
   }
+}
+
+/** 通过浏览器原生方法触发文件下载（给定 URL） */
+function triggerBrowserDownload(url: string, fileName: string): void {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.rel = "noopener";
+  // 对于跨域 URL，target 设为 _blank 可避免被拦截
+  if (!url.startsWith(window.location.origin)) {
+    link.target = "_blank";
+  }
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/** 通过 base64 数据触发文件下载 */
+function triggerBase64Download(base64: string, fileName: string, mime: string): void {
+  const link = document.createElement("a");
+  link.href = `data:${mime};base64,${base64}`;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 export function useWebSocket() {
@@ -1780,6 +1808,134 @@ export function useWebSocket() {
         }
         break;
       }
+
+      // ---- 拍照 / 录像 / 图库 (R00034) ----
+      case "camera_capture_result": {
+        const success = Boolean(data.success);
+        if (success) {
+          const photos = Array.isArray(data.photos) ? (data.photos as CameraPhoto[]) : [];
+          const count = photos.length;
+          if (count > 0) {
+            appStore.showToast(`拍照成功，已保存 ${count} 张照片`, "success");
+          } else {
+            appStore.showToast("拍照成功", "success");
+          }
+          robotStore.addCmdLog({
+            time: new Date().toLocaleTimeString(),
+            direction: "recv",
+            type: "camera_capture",
+            data: `拍照成功 ${count} 张`,
+          });
+        } else {
+          const errMsg = String(data.error ?? data.message ?? "拍照失败");
+          appStore.showToast(`拍照失败: ${errMsg}`, "error");
+        }
+        break;
+      }
+      case "camera_record_result": {
+        // 录制完成结果：可能包含文件信息或仅状态
+        if (typeof data.is_recording === "boolean") {
+          // 状态确认消息
+          robotStore.setRecordingUiState(data.is_recording as boolean, data.camera_id as number | undefined);
+          if (data.is_recording) {
+            appStore.showToast("录像已开始", "success");
+          } else {
+            appStore.showToast("录像已停止", "info");
+          }
+        } else if (data.file_name) {
+          // 录制完成，返回文件信息
+          const duration = typeof data.duration_s === "number" ? data.duration_s : 0;
+          const sizeMB = typeof data.size_bytes === "number" ? (data.size_bytes / 1024 / 1024).toFixed(1) : "?";
+          appStore.showToast(`录像完成: ${duration}s, ${sizeMB}MB`, "success");
+          robotStore.setRecordingUiState(false, data.camera_id as number | undefined);
+          robotStore.addCmdLog({
+            time: new Date().toLocaleTimeString(),
+            direction: "recv",
+            type: "camera_record",
+            data: `录像完成 ${data.file_name} ${duration}s ${sizeMB}MB`,
+          });
+        } else {
+          const success = data.success !== false;
+          appStore.showToast(success ? "录像操作成功" : "录像操作失败", success ? "info" : "error");
+        }
+        break;
+      }
+      case "camera_record_status": {
+        // 每 5 秒推送的录制状态
+        robotStore.setCameraRecordStatus({
+          is_recording: Boolean(data.is_recording),
+          camera_id: typeof data.camera_id === "number" ? data.camera_id : undefined,
+          elapsed_s: typeof data.elapsed_s === "number" ? data.elapsed_s : undefined,
+          file_size_bytes: typeof data.file_size_bytes === "number" ? data.file_size_bytes : undefined,
+        });
+        break;
+      }
+      case "camera_recording_ui_state": {
+        // 多客户端同步录制 UI 状态（红色边框）
+        robotStore.setRecordingUiState(
+          Boolean(data.is_recording),
+          typeof data.camera_id === "number" ? data.camera_id : undefined,
+        );
+        break;
+      }
+      case "camera_media_list_result": {
+        const total = typeof data.total === "number" ? data.total : 0;
+        const page = typeof data.page === "number" ? data.page : 1;
+        const files = Array.isArray(data.files) ? (data.files as GalleryItem[]) : [];
+        const pageSize = robotStore.galleryPageSize;
+        const hasMore = page * pageSize < total;
+        // 首页替换，后续页追加
+        if (page <= 1) {
+          robotStore.setGallery(files);
+        } else {
+          robotStore.appendGallery(files);
+        }
+        robotStore.setGalleryPageInfo(page, total, hasMore);
+        robotStore.setGalleryLoading(false);
+        // 存储空间信息
+        if (data.storage && typeof data.storage === "object") {
+          const st = data.storage as Record<string, unknown>;
+          const storage: GalleryStorage = {
+            total_bytes: Number(st.total_bytes ?? 0),
+            used_bytes: Number(st.used_bytes ?? 0),
+            available_bytes: Number(st.available_bytes ?? 0),
+          };
+          robotStore.setGalleryStorage(storage);
+        }
+        break;
+      }
+      case "camera_media_delete_result": {
+        const success = data.success !== false;
+        const deleted = Array.isArray(data.deleted) ? (data.deleted as string[]) : [];
+        const failed = Array.isArray(data.failed) ? (data.failed as string[]) : [];
+        if (success && deleted.length > 0) {
+          robotStore.removeGalleryItems(deleted);
+          appStore.showToast(`已删除 ${deleted.length} 个文件`, "success");
+        } else if (failed.length > 0) {
+          appStore.showToast(`删除失败 ${failed.length} 个文件`, "error");
+        } else {
+          appStore.showToast(success ? "删除成功" : "删除失败", success ? "success" : "error");
+        }
+        break;
+      }
+      case "camera_media_download_data": {
+        // 小文件: file_base64; 大文件: download_url
+        const fileName = String(data.file_name ?? "");
+        if (!fileName) break;
+        if (data.download_url) {
+          // 大文件通过 HTTP URL 下载
+          triggerBrowserDownload(String(data.download_url), fileName);
+          appStore.showToast(`开始下载: ${fileName}`, "info");
+        } else if (data.file_base64) {
+          // 小文件通过 base64 数据下载
+          const base64 = String(data.file_base64);
+          const isVideo = /\.(mp4|mov|avi|mkv)$/i.test(fileName);
+          const mime = isVideo ? "video/mp4" : "image/jpeg";
+          triggerBase64Download(base64, fileName, mime);
+          appStore.showToast(`下载完成: ${fileName}`, "success");
+        }
+        break;
+      }
     }
     // 通知所有消息监听器
     _messageListeners.forEach((fn) => {
@@ -1870,6 +2026,61 @@ export function useWebSocket() {
   }
   function sendMusicCommand(cmd: string, params: Record<string, unknown> = {}): void {
     _send({ type: cmd, data: params });
+  }
+
+  /* ---- 拍照 / 录像 / 图库 (R00034) ---- */
+
+  /** 拍照指令（不传 cameraIds 则对所有已注册摄像头各拍一张） */
+  function sendCameraCapture(cameraIds?: number[]): void {
+    _send({ type: "camera_capture", data: { camera_ids: cameraIds } });
+  }
+  /** 开始录像（仅主摄） */
+  function sendCameraRecordStart(cameraId: number, quality?: string, resolution?: string): void {
+    _send({
+      type: "camera_record_start",
+      data: {
+        camera_id: cameraId,
+        quality: quality || "medium",
+        resolution: resolution || "720p",
+        segment_duration_s: 300,
+      },
+    });
+  }
+  /** 停止录像 */
+  function sendCameraRecordStop(): void {
+    _send({ type: "camera_record_stop", data: {} });
+  }
+  /** 请求图库媒体文件列表 */
+  function requestGalleryList(type?: string, page?: number, pageSize?: number): void {
+    _send({
+      type: "camera_media_list",
+      data: {
+        type: type || "all",
+        page: page || 1,
+        page_size: pageSize || 20,
+      },
+    });
+  }
+  /** 批量删除图库文件 */
+  function sendGalleryDelete(fileNames: string[]): void {
+    _send({ type: "camera_media_delete", data: { file_names: fileNames } });
+  }
+  /** 请求下载媒体文件（小文件返回 base64，大文件返回 download_url） */
+  function requestMediaDownload(fileName: string): void {
+    _send({ type: "camera_media_download", data: { file_name: fileName } });
+  }
+
+  /**
+   * 构造媒体文件 HTTP 下载/播放 URL（直连模式）。
+   * 信令模式下无法直接 HTTP 访问机器人，返回 null。
+   * http_port 优先取 robotConfig.server.http_port，其次回退到 WS 端口。
+   */
+  function getMediaHttpUrl(fileName: string): string | null {
+    if (connectionMode.value !== "direct") return null;
+    const ip = _connectedIp.value;
+    if (!ip) return null;
+    const httpPort = robotStore.robotConfig?.server?.http_port ?? _connectedPort.value;
+    return `http://${ip}:${httpPort}/api/media/${encodeURIComponent(fileName)}`;
   }
   function requestLogs(params: {
     mode?: "tail" | "since" | "before";
@@ -2026,6 +2237,13 @@ export function useWebSocket() {
     sendServiceStatus,
     sendServiceControl,
     sendMusicCommand,
+    sendCameraCapture,
+    sendCameraRecordStart,
+    sendCameraRecordStop,
+    requestGalleryList,
+    sendGalleryDelete,
+    requestMediaDownload,
+    getMediaHttpUrl,
     requestLogs,
     requestBindList,
     sendBindRequest,

@@ -19,6 +19,9 @@ const {
   sendGimbalCenter,
   requestCameraStatus,
   sendBinary,
+  sendCameraCapture,
+  sendCameraRecordStart,
+  sendCameraRecordStop,
 } = useWebSocket();
 const {
   videoStream0,
@@ -37,6 +40,87 @@ const {
 const gimbalAvailable = computed(() => getRemoteFeatures().includes("gimbal"));
 // 喊话功能是否可用（服务端 features 包含 "voice_broadcast"）
 const voiceBroadcastAvailable = computed(() => getRemoteFeatures().includes("voice_broadcast"));
+// 拍照/录像功能是否可用（服务端 features 包含 "camera_capture"）
+const cameraCaptureAvailable = computed(() => getRemoteFeatures().includes("camera_capture"));
+
+// ---- 拍照 / 录像 (R00034) ----
+/** 主摄摄像头 ID（取第一个已注册摄像头，作为录制摄像头） */
+const mainCameraId = computed(() => (robotStore.cameras.length > 0 ? robotStore.cameras[0].id : 0));
+/** 是否正在录制（状态由服务端 camera_record_status / camera_recording_ui_state 同步） */
+const isRecording = computed(() => robotStore.cameraRecord.is_recording);
+/** 录制时长（秒） */
+const recordElapsed = computed(() => robotStore.cameraRecord.elapsed_s);
+/** 录制文件大小 */
+const recordFileSize = computed(() => robotStore.cameraRecord.file_size_bytes);
+/** 录制中的摄像头是否为主摄（左摄像头 cam 0） */
+const mainCameraRecording = computed(
+  () =>
+    isRecording.value &&
+    (robotStore.cameraRecord.camera_id === null ||
+      robotStore.cameraRecord.camera_id === mainCameraId.value),
+);
+
+/** 格式化录制时长 mm:ss */
+function formatRecordTime(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+/** 格式化文件大小 */
+function formatRecordSize(bytes: number): string {
+  if (!bytes) return "0 MB";
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** 拍照：对所有已注册摄像头各拍一张 */
+function handleCapture(): void {
+  sendCameraCapture();
+  appStore.showToast("正在拍照...", "info");
+  robotStore.addCmdLog({
+    time: textTime(),
+    direction: "send",
+    type: "camera_capture",
+    data: "拍照指令已发送",
+  });
+}
+
+/** 录像按钮：切换开始/停止 */
+function handleRecordToggle(): void {
+  if (isRecording.value) {
+    // 停止录像
+    sendCameraRecordStop();
+    robotStore.addCmdLog({
+      time: textTime(),
+      direction: "send",
+      type: "camera_record_stop",
+      data: "停止录像",
+    });
+  } else {
+    // 开始录像（主摄）
+    sendCameraRecordStart(mainCameraId.value);
+    appStore.showToast("正在开始录像...", "info");
+    robotStore.addCmdLog({
+      time: textTime(),
+      direction: "send",
+      type: "camera_record_start",
+      data: `开始录像 摄像头${mainCameraId.value}`,
+    });
+  }
+}
+
+/** 自动停止录像（切换面板 / 网页切后台时调用） */
+function autoStopRecording(): void {
+  if (isRecording.value) {
+    sendCameraRecordStop();
+    robotStore.addCmdLog({
+      time: textTime(),
+      direction: "send",
+      type: "camera_record_stop",
+      data: "自动停止录像",
+    });
+  }
+}
 
 // 喊话面板
 const broadcastRecording = ref(false);
@@ -832,6 +916,9 @@ function rebindVideoStreams(): void {
 function onVisibilityChange(): void {
   if (document.visibilityState === "visible") {
     rebindVideoStreams();
+  } else {
+    // 网页切后台时自动停止录像
+    autoStopRecording();
   }
 }
 
@@ -891,10 +978,11 @@ onUnmounted(() => {
   }
 });
 
-// KeepAlive 缓存场景：切换面板时自动挂断录音/通话
+// KeepAlive 缓存场景：切换面板时自动挂断录音/通话、停止录像
 onDeactivated(() => {
   stopBroadcastRecord();
   stopBroadcastPhone();
+  autoStopRecording();
 });
 </script>
 
@@ -902,11 +990,33 @@ onDeactivated(() => {
   <div class="view active">
     <div class="remote-layout">
       <div class="remote-controls">
+        <!-- 拍照 / 录像 操作栏 -->
+        <div v-if="cameraCaptureAvailable" class="camera-actions">
+          <button class="cam-action-btn capture" @click="handleCapture" title="拍照（所有已注册摄像头）">
+            📷 拍照
+          </button>
+          <button
+            class="cam-action-btn record"
+            :class="{ recording: isRecording }"
+            @click="handleRecordToggle"
+            :title="isRecording ? '停止录像' : '开始录像（主摄）'"
+          >
+            {{ isRecording ? "⏹ 停止录像" : "⏺ 录像" }}
+          </button>
+          <span v-if="isRecording" class="record-status">
+            <span class="record-dot"></span>
+            REC {{ formatRecordTime(recordElapsed) }} · {{ formatRecordSize(recordFileSize) }}
+          </span>
+        </div>
+
         <!-- Dual Camera Row -->
         <div class="camera-dual">
           <!-- 左摄像头 -->
           <div class="camera-dual-item">
-            <div class="camera-dual-container" :class="{ disabled: !cameraLeftOn }">
+            <div
+              class="camera-dual-container"
+              :class="{ disabled: !cameraLeftOn, recording: mainCameraRecording }"
+            >
               <video ref="videoLeftRef" class="camera-feed" autoplay muted playsinline width="640" height="480"></video>
               <div class="video-debug">{{ videoDebug0 || "等待流..." }}</div>
               <div v-if="!cameraLeftOn" class="camera-placeholder">
@@ -1225,6 +1335,93 @@ onDeactivated(() => {
 .camera-controls button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ===== 拍照 / 录像 操作栏 ===== */
+.camera-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+.cam-action-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.cam-action-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.cam-action-btn.capture {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.cam-action-btn.capture:hover {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+.cam-action-btn.record {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.cam-action-btn.record:hover {
+  background: var(--danger);
+  color: #fff;
+}
+.cam-action-btn.record.recording {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  animation: record-pulse 1.5s ease-in-out infinite;
+}
+@keyframes record-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.record-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+.record-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: record-blink 1s ease-in-out infinite;
+}
+@keyframes record-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+/* 主摄录制时红色边框 */
+.camera-dual-container.recording {
+  border: 2px solid var(--danger);
+  box-shadow: 0 0 0 2px rgba(255, 60, 60, 0.3), 0 0 12px rgba(255, 60, 60, 0.4);
+  animation: recording-border 1.5s ease-in-out infinite;
+}
+@keyframes recording-border {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(255, 60, 60, 0.3), 0 0 12px rgba(255, 60, 60, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 2px rgba(255, 60, 60, 0.6), 0 0 18px rgba(255, 60, 60, 0.6);
+  }
 }
 .joystick-container {
   display: flex;

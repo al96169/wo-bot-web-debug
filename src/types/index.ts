@@ -125,10 +125,39 @@ export interface SSHOutputEntry {
 export interface GalleryItem {
   id: string;
   name: string;
-  url: string;
-  thumbnail?: string;
-  date: string;
-  size: string;
+  type: "photo" | "video";
+  thumbnail_base64?: string;
+  file_size: number;
+  duration_s?: number;
+  camera_id?: number;
+  timestamp: string;
+  download_url?: string;
+}
+
+/** 图库存储空间信息 */
+export interface GalleryStorage {
+  total_bytes: number;
+  used_bytes: number;
+  available_bytes: number;
+}
+
+/** 拍照结果中的单张照片信息 */
+export interface CameraPhoto {
+  camera_id: number;
+  file_name: string;
+  thumbnail_base64?: string;
+  size_bytes: number;
+  width?: number;
+  height?: number;
+  timestamp: string;
+}
+
+/** 录制状态信息 */
+export interface CameraRecordStatus {
+  is_recording: boolean;
+  camera_id?: number;
+  elapsed_s?: number;
+  file_size_bytes?: number;
 }
 
 /* ---- 系统状态 ---- */

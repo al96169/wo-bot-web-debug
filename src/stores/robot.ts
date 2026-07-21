@@ -1,8 +1,10 @@
 import { defineStore } from "pinia";
 import type {
   BindingInfo,
+  CameraRecordStatus,
   DanceInfo,
   GalleryItem,
+  GalleryStorage,
   LogEntry,
   Message,
   Module,
@@ -104,6 +106,26 @@ export const useRobotStore = defineStore("robot", {
 
     /** 图库 */
     gallery: [] as GalleryItem[],
+    /** 图库存储空间信息 */
+    galleryStorage: null as GalleryStorage | null,
+    /** 图库分页：当前页 */
+    galleryPage: 1 as number,
+    /** 图库分页：总数 */
+    galleryTotal: 0 as number,
+    /** 图库分页：每页数量 */
+    galleryPageSize: 20 as number,
+    /** 图库是否还有更多数据可加载 */
+    galleryHasMore: false as boolean,
+    /** 图库列表是否正在加载 */
+    galleryLoading: false as boolean,
+
+    /** 摄像头录制状态 */
+    cameraRecord: {
+      is_recording: false,
+      camera_id: null as number | null,
+      elapsed_s: 0,
+      file_size_bytes: 0,
+    } as CameraRecordStatus & { elapsed_s: number; file_size_bytes: number },
 
     /** 设备详情 */
     deviceDetails: [] as DeviceDetail[],
@@ -401,6 +423,63 @@ export const useRobotStore = defineStore("robot", {
 
     setGallery(items: GalleryItem[]): void {
       this.gallery = items;
+    },
+
+    /** 追加图库列表（分页加载更多） */
+    appendGallery(items: GalleryItem[]): void {
+      // 去重：过滤掉已存在的文件名
+      const existing = new Set(this.gallery.map((g) => g.name));
+      const newItems = items.filter((g) => !existing.has(g.name));
+      if (newItems.length > 0) this.gallery.push(...newItems);
+    },
+
+    setGalleryStorage(storage: GalleryStorage | null): void {
+      this.galleryStorage = storage;
+    },
+
+    setGalleryPageInfo(page: number, total: number, hasMore: boolean): void {
+      this.galleryPage = page;
+      this.galleryTotal = total;
+      this.galleryHasMore = hasMore;
+    },
+
+    setGalleryLoading(loading: boolean): void {
+      this.galleryLoading = loading;
+    },
+
+    resetGallery(): void {
+      this.gallery = [];
+      this.galleryPage = 1;
+      this.galleryTotal = 0;
+      this.galleryHasMore = false;
+      this.galleryLoading = false;
+      this.galleryStorage = null;
+    },
+
+    /** 从图库中移除已删除的文件 */
+    removeGalleryItems(fileNames: string[]): void {
+      const removeSet = new Set(fileNames);
+      this.gallery = this.gallery.filter((g) => !removeSet.has(g.name));
+      this.galleryTotal = Math.max(0, this.galleryTotal - fileNames.length);
+    },
+
+    /* ---- 摄像头录制状态 ---- */
+
+    setCameraRecordStatus(status: CameraRecordStatus): void {
+      this.cameraRecord.is_recording = status.is_recording;
+      this.cameraRecord.camera_id = status.camera_id ?? null;
+      if (status.elapsed_s !== undefined) this.cameraRecord.elapsed_s = status.elapsed_s;
+      if (status.file_size_bytes !== undefined) this.cameraRecord.file_size_bytes = status.file_size_bytes;
+    },
+
+    /** 设置录制 UI 状态（多客户端同步） */
+    setRecordingUiState(isRecording: boolean, cameraId?: number): void {
+      this.cameraRecord.is_recording = isRecording;
+      this.cameraRecord.camera_id = cameraId ?? null;
+      if (!isRecording) {
+        this.cameraRecord.elapsed_s = 0;
+        this.cameraRecord.file_size_bytes = 0;
+      }
     },
 
     /* ---- 系统状态 ---- */
