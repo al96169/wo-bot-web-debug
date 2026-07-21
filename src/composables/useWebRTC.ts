@@ -1,7 +1,17 @@
 import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useRobotStore, type CameraInfo } from "../stores/robot";
-import type { DanceInfo, LogEntry, MusicStatus, MusicTrack, ServiceInfo, SoftwareTask } from "../types";
+import type {
+  CameraPhoto,
+  DanceInfo,
+  GalleryItem,
+  GalleryStorage,
+  LogEntry,
+  MusicStatus,
+  MusicTrack,
+  ServiceInfo,
+  SoftwareTask,
+} from "../types";
 import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime } from "./useWebSocket";
 
 /* ============================================================
@@ -885,6 +895,117 @@ export function useWebRTC() {
         break;
       case "config_set_ack":
         break;
+
+      // ---- 拍照 / 录像 / 图库 (R00034, DataChannel 路径) ----
+      case "camera_capture_result": {
+        const success = Boolean(data.success);
+        if (success) {
+          const photos = Array.isArray(data.photos) ? (data.photos as CameraPhoto[]) : [];
+          const count = photos.length;
+          appStore.showToast(count > 0 ? `拍照成功，已保存 ${count} 张照片` : "拍照成功", "success");
+          robotStore.addCmdLog({
+            time: new Date().toLocaleTimeString(),
+            direction: "recv",
+            type: "camera_capture",
+            data: `拍照成功 ${count} 张`,
+          });
+        } else {
+          appStore.showToast(`拍照失败: ${String(data.error ?? data.message ?? "未知错误")}`, "error");
+        }
+        break;
+      }
+      case "camera_record_result": {
+        if (typeof data.is_recording === "boolean") {
+          robotStore.setRecordingUiState(data.is_recording as boolean, data.camera_id as number | undefined);
+          appStore.showToast(data.is_recording ? "录像已开始" : "录像已停止", data.is_recording ? "success" : "info");
+        } else if (data.file_name) {
+          const duration = typeof data.duration_s === "number" ? data.duration_s : 0;
+          const sizeMB = typeof data.size_bytes === "number" ? (data.size_bytes / 1024 / 1024).toFixed(1) : "?";
+          appStore.showToast(`录像完成: ${duration}s, ${sizeMB}MB`, "success");
+          robotStore.setRecordingUiState(false, data.camera_id as number | undefined);
+        } else {
+          const ok = data.success !== false;
+          appStore.showToast(ok ? "录像操作成功" : "录像操作失败", ok ? "info" : "error");
+        }
+        break;
+      }
+      case "camera_record_status": {
+        robotStore.setCameraRecordStatus({
+          is_recording: Boolean(data.is_recording),
+          camera_id: typeof data.camera_id === "number" ? data.camera_id : undefined,
+          elapsed_s: typeof data.elapsed_s === "number" ? data.elapsed_s : undefined,
+          file_size_bytes: typeof data.file_size_bytes === "number" ? data.file_size_bytes : undefined,
+        });
+        break;
+      }
+      case "camera_recording_ui_state": {
+        robotStore.setRecordingUiState(
+          Boolean(data.is_recording),
+          typeof data.camera_id === "number" ? data.camera_id : undefined,
+        );
+        break;
+      }
+      case "camera_media_list_result": {
+        const total = typeof data.total === "number" ? data.total : 0;
+        const page = typeof data.page === "number" ? data.page : 1;
+        const files = Array.isArray(data.files) ? (data.files as GalleryItem[]) : [];
+        const pageSize = robotStore.galleryPageSize;
+        const hasMore = page * pageSize < total;
+        if (page <= 1) {
+          robotStore.setGallery(files);
+        } else {
+          robotStore.appendGallery(files);
+        }
+        robotStore.setGalleryPageInfo(page, total, hasMore);
+        robotStore.setGalleryLoading(false);
+        if (data.storage && typeof data.storage === "object") {
+          const st = data.storage as Record<string, unknown>;
+          const storage: GalleryStorage = {
+            total_bytes: Number(st.total_bytes ?? 0),
+            used_bytes: Number(st.used_bytes ?? 0),
+            available_bytes: Number(st.available_bytes ?? 0),
+          };
+          robotStore.setGalleryStorage(storage);
+        }
+        break;
+      }
+      case "camera_media_delete_result": {
+        const ok = data.success !== false;
+        const deleted = Array.isArray(data.deleted) ? (data.deleted as string[]) : [];
+        const failed = Array.isArray(data.failed) ? (data.failed as string[]) : [];
+        if (ok && deleted.length > 0) {
+          robotStore.removeGalleryItems(deleted);
+          appStore.showToast(`已删除 ${deleted.length} 个文件`, "success");
+        } else if (failed.length > 0) {
+          appStore.showToast(`删除失败 ${failed.length} 个文件`, "error");
+        } else {
+          appStore.showToast(ok ? "删除成功" : "删除失败", ok ? "success" : "error");
+        }
+        break;
+      }
+      case "camera_media_download_data": {
+        const fileName = String(data.file_name ?? "");
+        if (!fileName) break;
+        if (data.download_url) {
+          // 大文件通过 HTTP URL 下载
+          const link = document.createElement("a");
+          link.href = String(data.download_url);
+          link.download = fileName;
+          link.click();
+          appStore.showToast(`开始下载: ${fileName}`, "info");
+        } else if (data.file_base64) {
+          // 小文件通过 base64 数据下载
+          const base64 = String(data.file_base64);
+          const isVideo = /\.(mp4|mov|avi|mkv)$/i.test(fileName);
+          const mime = isVideo ? "video/mp4" : "image/jpeg";
+          const link = document.createElement("a");
+          link.href = `data:${mime};base64,${base64}`;
+          link.download = fileName;
+          link.click();
+          appStore.showToast(`下载完成: ${fileName}`, "success");
+        }
+        break;
+      }
       default:
         console.log("[DC.msg] unhandled:", msgType, JSON.stringify(data).slice(0, 200));
         break;
