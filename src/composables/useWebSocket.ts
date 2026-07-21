@@ -662,9 +662,8 @@ export function useWebSocket() {
       setDataChannel(channel);
       // 订阅设备状态
       channel.send(JSON.stringify({ type: "subscribe", data: { events: ["status"] } }));
-      // 请求机器人信息（复用直连 connected 握手语义，触发 robot_info/features/status 推送）
-      // 机器人若不识别 get_info，上方 subscribe 后仍会推送 status（status 中含 features）
-      channel.send(JSON.stringify({ type: "get_info" }));
+      // 请求机器人状态（机器人支持 get_status，响应中包含 features）
+      channel.send(JSON.stringify({ type: "get_status" }));
       // 启动心跳（信令模式通过 DataChannel 发送 ping）
       startHeartbeat();
     };
@@ -884,6 +883,9 @@ export function useWebSocket() {
           }
           _signalPc.setRemoteDescription(answerDesc).then(() => {
             console.log("[WS-Signal] setRemoteDescription OK, sdp length:", answerDesc.sdp?.length);
+            // 更新 signalingState 供调试面板显示
+            const webrtc = useWebRTC();
+            webrtc.signalingState.value = _signalPc!.signalingState;
           }).catch((e: unknown) => {
             console.error("[WS-Signal] setRemoteDescription 失败:", e);
           });
