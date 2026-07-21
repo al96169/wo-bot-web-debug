@@ -651,13 +651,17 @@ export function useWebSocket() {
     }
     setDataChannel(null);
     // 同步重置 useWebRTC 模块级 refs（防止直连→信令切换时旧资源残留）
+    // 仅重置实际暴露的 ref，跳过不存在的属性
     const webrtc = useWebRTC();
-    webrtc.connectionState.value = "new";
-    webrtc.iceConnectionState.value = "new";
-    webrtc.signalingState.value = "stable";
-    webrtc.videoStream0.value = null;
-    webrtc.videoStream1.value = null;
-    webrtc.videoPlaying.value = false;
+    try {
+      if (webrtc.connectionState) webrtc.connectionState.value = "new";
+      if (webrtc.iceConnectionState) webrtc.iceConnectionState.value = "new";
+      if (webrtc.signalingState) webrtc.signalingState.value = "stable";
+      if (webrtc.videoStream0) webrtc.videoStream0.value = null;
+      if (webrtc.videoStream1) webrtc.videoStream1.value = null;
+    } catch (e) {
+      console.warn("[WS-Signal] cleanupSignalWebRTC: reset refs failed:", e);
+    }
   }
 
   /** 设置信令模式 DataChannel 的事件处理器 */
