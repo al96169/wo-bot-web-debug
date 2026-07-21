@@ -569,6 +569,10 @@ export function useWebRTC() {
       data = ((data as Record<string, unknown>).data as Record<string, unknown>) ?? {};
     }
 
+    if (msgType.startsWith("camera_")) {
+      console.log("[DC-Debug] dispatchDataChannelMessage:", msgType, JSON.stringify(data).slice(0, 200));
+    }
+
     switch (msgType) {
       case "status": {
         const batt = (data.battery ?? {}) as Record<string, unknown>;

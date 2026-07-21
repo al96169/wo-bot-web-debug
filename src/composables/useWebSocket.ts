@@ -1197,6 +1197,9 @@ export function useWebSocket() {
   /** 处理所有消息（信令 + 业务响应，统一通过 WebSocket） */
   function handleSignalingMessage(msg: WsMsg): void {
     const data = msg.data ?? {};
+    if (msg.type && msg.type.startsWith("camera_")) {
+      console.log("[WS-Debug] handleSignalingMessage:", msg.type, JSON.stringify(data).slice(0, 200));
+    }
     switch (msg.type) {
       // ---- 信令层 ----
       case "connected":
