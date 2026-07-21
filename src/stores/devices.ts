@@ -120,7 +120,21 @@ export const useDevicesStore = defineStore("devices", {
         const raw = localStorage.getItem("wobot_debug_devices");
         if (!raw) return;
         const data = JSON.parse(raw);
-        if (Array.isArray(data.devices)) this.devices = data.devices;
+        if (Array.isArray(data.devices)) {
+          // 清理重复设备：同一 robotId 的设备只保留有 ip:port 的那个
+          const seen = new Map<string, Device>();
+          for (const d of data.devices) {
+            const key = d.robotId || d.id;
+            const existing = seen.get(key);
+            if (!existing) {
+              seen.set(key, d);
+            } else if (d.ip && d.port > 0 && (!existing.ip || existing.port === 0)) {
+              // 当前设备有 ip:port 而已有设备没有，用当前替换
+              seen.set(key, d);
+            }
+          }
+          this.devices = Array.from(seen.values());
+        }
         // 不恢复 currentDevice：连接是运行时状态，刷新页面后必定断开
       } catch {
         // 忽略格式错误
