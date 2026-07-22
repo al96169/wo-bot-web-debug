@@ -967,7 +967,18 @@ export function useWebRTC() {
       case "camera_media_list_result": {
         const total = typeof data.total === "number" ? data.total : 0;
         const page = typeof data.page === "number" ? data.page : 1;
-        const files = Array.isArray(data.files) ? (data.files as GalleryItem[]) : [];
+        const rawFiles = Array.isArray(data.files) ? (data.files as Record<string, unknown>[]) : [];
+        const files: GalleryItem[] = rawFiles.map((f) => ({
+          id: String(f.file_name ?? f.name ?? f.id ?? ""),
+          name: String(f.file_name ?? f.name ?? ""),
+          type: (f.type === "video" ? "video" : "photo") as "photo" | "video",
+          thumbnail_base64: f.thumbnail_base64 ? String(f.thumbnail_base64) : undefined,
+          file_size: Number(f.size_bytes ?? f.file_size ?? 0),
+          duration_s: f.duration_s !== undefined ? Number(f.duration_s) : undefined,
+          camera_id: f.camera_id !== undefined && f.camera_id !== null ? Number(f.camera_id) : undefined,
+          timestamp: String(f.timestamp ?? ""),
+          download_url: f.download_url ? String(f.download_url) : undefined,
+        }));
         const pageSize = robotStore.galleryPageSize;
         const hasMore = page * pageSize < total;
         if (page <= 1) {
