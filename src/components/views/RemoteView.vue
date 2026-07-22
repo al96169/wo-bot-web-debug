@@ -22,6 +22,7 @@ const {
   sendCameraCapture,
   sendCameraRecordStart,
   sendCameraRecordStop,
+  sendCameraRecordQuery,
 } = useWebSocket();
 const {
   videoStream0,
@@ -956,6 +957,8 @@ onMounted(() => {
   startDebugLoop(1);
   // 延迟等待 WebSocket 连接就绪后请求摄像头列表
   setTimeout(() => requestCameraStatus(), 1000);
+  // DC 连接成功后查询当前录制状态（同步按钮状态）
+  setTimeout(() => sendCameraRecordQuery(), 2000);
   // 浏览器切后台再切回来时，video.srcObject 可能断开，重新绑定
   document.addEventListener("visibilitychange", onVisibilityChange);
 });

@@ -2054,6 +2054,10 @@ export function useWebSocket() {
   function sendCameraRecordStop(): void {
     _send({ type: "camera_record_stop", data: {} });
   }
+  /** 查询当前录制状态（连接后同步状态用） */
+  function sendCameraRecordQuery(): void {
+    _send({ type: "camera_record_query", data: {} });
+  }
   /** 请求图库媒体文件列表 */
   function requestGalleryList(type?: string, page?: number, pageSize?: number): void {
     _send({
@@ -2244,6 +2248,7 @@ export function useWebSocket() {
     sendCameraCapture,
     sendCameraRecordStart,
     sendCameraRecordStop,
+    sendCameraRecordQuery,
     requestGalleryList,
     sendGalleryDelete,
     requestMediaDownload,
