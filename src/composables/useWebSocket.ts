@@ -2045,7 +2045,7 @@ export function useWebSocket() {
         camera_id: cameraId,
         quality: quality || "medium",
         resolution: resolution || "720p",
-        segment_duration_s: 300,
+        segment_duration_s: 60,
       },
     });
   }
