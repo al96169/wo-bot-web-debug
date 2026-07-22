@@ -12,7 +12,7 @@ import type {
   ServiceInfo,
   SoftwareTask,
 } from "../types";
-import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime, notifyMessageListeners } from "./useWebSocket";
+import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime, notifyMessageListeners, onChunkedDownload, handleChunkedDownloadMessage } from "./useWebSocket";
 
 /* ============================================================
  * wo-bot-web-debug - WebRTC 连接管理
@@ -313,9 +313,10 @@ export function useWebRTC() {
         appStore.setSSHConnected(true);
         appStore.showToast("WebRTC 业务通道已建立", "success");
         channel.send(JSON.stringify({ type: "subscribe", data: { events: ["status"] } }));
-        // DC 连接后立即查询录制状态，同步按钮
+        // DC 连接后查询录制状态和获取配置（含 http_port）
         setTimeout(() => {
           channel.send(JSON.stringify({ type: "camera_record_query", data: {} }));
+          channel.send(JSON.stringify({ type: "config_get", data: {} }));
         }, 500);
       };
 
@@ -1017,7 +1018,7 @@ export function useWebRTC() {
         const fileName = String(data.file_name ?? "");
         if (!fileName) break;
         if (data.file_base64) {
-          // 通过 base64 数据下载（小文件）
+          // 小文件通过 base64 下载
           const base64 = String(data.file_base64);
           const isVideo = /\.(mp4|mov|avi|mkv)$/i.test(fileName);
           const mime = isVideo ? "video/mp4" : "image/jpeg";
@@ -1029,6 +1030,15 @@ export function useWebRTC() {
         }
         break;
       }
+      case "camera_media_download_start":
+      case "camera_media_download_chunk":
+      case "camera_media_download_end":
+        // 分块下载消息（由 useWebSocket 中的 handleChunkedDownloadMessage 处理）
+        handleChunkedDownloadMessage(msgType, data);
+        break;
+      case "camera_media_download_done":
+        // 分块传输完成确认
+        break;
       default:
         console.log("[DC.msg] unhandled:", msgType, JSON.stringify(data).slice(0, 200));
         break;

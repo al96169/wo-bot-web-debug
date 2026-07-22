@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from "vue";
 import type { GalleryItem } from "@/types";
-import { useWebSocket, onMessage } from "@/composables/useWebSocket";
+import { useWebSocket, onChunkedDownload } from "@/composables/useWebSocket";
 
 const props = defineProps<{
   item: GalleryItem;
@@ -17,7 +17,7 @@ const { requestMediaDownload } = useWebSocket();
 const isVideo = computed(() => props.item.type === "video");
 const videoBlobUrl = ref<string | null>(null);
 const videoLoading = ref(false);
-const videoError = ref(false);
+const downloadProgress = ref(0);
 
 /** 缩略图 data URI */
 const thumbSrc = computed(() => {
@@ -27,46 +27,32 @@ const thumbSrc = computed(() => {
   return null;
 });
 
-/** 监听 DC/WS 消息，捕获视频下载响应 */
-let _removeListener: (() => void) | null = null;
+/** 监听分块下载完成 */
+let _unregisterChunked: (() => void) | null = null;
 
 watch(
   () => props.item,
-  async (item) => {
+  (item) => {
     if (!item || item.type !== "video") return;
-    // 请求视频文件
+    // 请求视频文件（后端会分块发送）
     videoLoading.value = true;
-    videoError.value = false;
     videoBlobUrl.value = null;
+    downloadProgress.value = 0;
     requestMediaDownload(item.name);
 
-    // 监听下载响应
-    _removeListener?.();
-    _removeListener = onMessage((msg) => {
-      if (msg.type === "camera_media_download_data") {
-        const data = msg.data as Record<string, unknown>;
-        if (data?.file_name === item.name && data.file_base64) {
-          const base64 = String(data.file_base64);
-          const byteChars = atob(base64);
-          const byteNumbers = new Array(byteChars.length);
-          for (let i = 0; i < byteChars.length; i++) {
-            byteNumbers[i] = byteChars.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: "video/mp4" });
-          videoBlobUrl.value = URL.createObjectURL(blob);
-          videoLoading.value = false;
-          _removeListener?.();
-          _removeListener = null;
-        }
-      }
+    // 注册分块下载完成回调
+    _unregisterChunked?.();
+    _unregisterChunked = onChunkedDownload(item.name, (blobUrl) => {
+      videoBlobUrl.value = blobUrl;
+      videoLoading.value = false;
+      downloadProgress.value = 100;
     });
   },
   { immediate: true },
 );
 
 onUnmounted(() => {
-  _removeListener?.();
+  _unregisterChunked?.();
   if (videoBlobUrl.value) URL.revokeObjectURL(videoBlobUrl.value);
 });
 
@@ -126,12 +112,11 @@ function onDownload() {
           ></video>
           <div v-else-if="videoLoading" class="preview-empty">
             <img v-if="thumbSrc" :src="thumbSrc" alt="cover" class="preview-cover" />
-            <p>⏳ 加载视频中...</p>
+            <p>⏳ 正在加载视频...</p>
           </div>
           <div v-else class="preview-empty">
             <img v-if="thumbSrc" :src="thumbSrc" alt="cover" class="preview-cover" />
             <p>🎬 视频封面</p>
-            <p class="hint">点击「下载」获取视频文件</p>
           </div>
         </template>
       </div>
@@ -224,9 +209,6 @@ function onDownload() {
   max-width: 100%;
   max-height: 40vh;
   border-radius: var(--radius-md);
-}
-.preview-empty .hint {
-  font-size: 12px;
 }
 .btn-secondary {
   padding: 6px 14px;

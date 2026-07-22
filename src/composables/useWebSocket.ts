@@ -54,6 +54,102 @@ let _intentionalDisconnect = false;
 export const connectionMode = ref<"direct" | "signal">("direct");
 /** 信令模式下当前连接的 robotId（用于断线重连） */
 let _signalRobotId = "";
+
+// ---- 分块下载管理器 ----
+interface ChunkedDownload {
+  file_name: string;
+  size_bytes: number;
+  total_chunks: number;
+  chunks: Map<number, string>;
+  thumbnail_base64?: string;
+  on_complete: (blobUrl: string, download: ChunkedDownload) => void;
+}
+const _chunkedDownloads = new Map<string, ChunkedDownload>();
+
+/**
+ * 注册分块下载完成回调（供 GalleryView / GalleryPreviewDialog 使用）
+ * 返回取消注册函数。
+ */
+export function onChunkedDownload(
+  fileName: string,
+  onComplete: (blobUrl: string, download: ChunkedDownload) => void,
+): () => void {
+  const key = fileName;
+  const existing = _chunkedDownloads.get(key);
+  if (existing) {
+    existing.on_complete = onComplete;
+  } else {
+    _chunkedDownloads.set(key, {
+      file_name: fileName,
+      size_bytes: 0,
+      total_chunks: 0,
+      chunks: new Map(),
+      on_complete: onComplete,
+    });
+  }
+  return () => {
+    const dl = _chunkedDownloads.get(key);
+    if (dl) dl.on_complete = () => {};
+  };
+}
+
+/** 处理分块下载消息（供 WS/DC handler 调用） */
+export function handleChunkedDownloadMessage(msgType: string, data: any): void {
+  const fileName = String(data?.file_name ?? "");
+  if (!fileName) return;
+
+  if (msgType === "camera_media_download_start") {
+    const dl: ChunkedDownload = {
+      file_name: fileName,
+      size_bytes: Number(data.size_bytes ?? 0),
+      total_chunks: Number(data.total_chunks ?? 0),
+      chunks: new Map(),
+      thumbnail_base64: data.thumbnail_base64 ? String(data.thumbnail_base64) : undefined,
+      on_complete: () => {},
+    };
+    // 保留已有的 on_complete 回调
+    const existing = _chunkedDownloads.get(fileName);
+    if (existing) {
+      dl.on_complete = existing.on_complete;
+    }
+    _chunkedDownloads.set(fileName, dl);
+    return;
+  }
+
+  if (msgType === "camera_media_download_chunk") {
+    const dl = _chunkedDownloads.get(fileName);
+    if (!dl) return;
+    const idx = Number(data.chunk_index ?? -1);
+    const chunkData = String(data.data ?? "");
+    if (idx >= 0 && chunkData) {
+      dl.chunks.set(idx, chunkData);
+    }
+    return;
+  }
+
+  if (msgType === "camera_media_download_end") {
+    const dl = _chunkedDownloads.get(fileName);
+    if (!dl) return;
+    // 组装所有块
+    const sortedChunks = Array.from(dl.chunks.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([, v]) => v);
+    const fullBase64 = sortedChunks.join("");
+    // base64 → blob
+    const byteChars = atob(fullBase64);
+    const byteNumbers = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) {
+      byteNumbers[i] = byteChars.charCodeAt(i);
+    }
+    const isVideo = /\.(mp4|mov|avi|mkv)$/i.test(fileName);
+    const blob = new Blob([byteNumbers], { type: isVideo ? "video/mp4" : "image/jpeg" });
+    const blobUrl = URL.createObjectURL(blob);
+    dl.on_complete(blobUrl, dl);
+    // 清理
+    _chunkedDownloads.delete(fileName);
+    return;
+  }
+}
 /** 信令模式下重连计数 */
 let _signalReconnectCount = 0;
 /** 信令模式下是否已完成 WebRTC 握手（DataChannel 曾打开过） */
@@ -1921,18 +2017,26 @@ export function useWebSocket() {
         break;
       }
       case "camera_media_download_data": {
-        // 通过 base64 数据下载（统一走 WS/DC 传输，不依赖 HTTP API）
         const fileName = String(data.file_name ?? "");
         if (!fileName) break;
         if (data.file_base64) {
+          // 小文件通过 base64 下载
           const base64 = String(data.file_base64);
           const isVideo = /\.(mp4|mov|avi|mkv)$/i.test(fileName);
           const mime = isVideo ? "video/mp4" : "image/jpeg";
           triggerBase64Download(base64, fileName, mime);
           appStore.showToast(`下载完成: ${fileName}`, "success");
-        } else {
-          appStore.showToast(`下载失败: 未收到文件数据`, "error");
         }
+        break;
+      }
+      case "camera_media_download_start":
+      case "camera_media_download_chunk":
+      case "camera_media_download_end":
+        // 分块下载消息
+        handleChunkedDownloadMessage(msg.type, data);
+        break;
+      case "camera_media_download_done": {
+        // 分块传输完成确认（下载/预览已由 onChunkedDownload 回调处理）
         break;
       }
     }

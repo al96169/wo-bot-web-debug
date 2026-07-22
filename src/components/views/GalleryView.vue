@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useRobotStore } from "@/stores/robot";
-import { useWebSocket } from "@/composables/useWebSocket";
+import { useWebSocket, onChunkedDownload } from "@/composables/useWebSocket";
 import GalleryPreviewDialog from "@/components/dialogs/GalleryPreviewDialog.vue";
 import type { GalleryItem } from "@/types";
 
@@ -131,11 +131,23 @@ function onPreviewDownload(fileName: string): void {
 
 /* ---- 下载 ---- */
 /**
- * 下载单个文件：统一通过 DC/WS 请求 base64 传输（不依赖 HTTP API）
+ * 下载单个文件：通过 DC 分块传输
  */
 function downloadFile(fileName: string): void {
-  requestMediaDownload(fileName);
   appStore.showToast(`正在下载: ${fileName}`, "info");
+  // 注册分块下载完成回调
+  onChunkedDownload(fileName, (blobUrl) => {
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    // 延迟释放 blob URL
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    appStore.showToast(`下载完成: ${fileName}`, "success");
+  });
+  requestMediaDownload(fileName);
 }
 
 /** 批量下载选中的文件 */
