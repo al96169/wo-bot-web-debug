@@ -305,7 +305,6 @@ onUnmounted(() => {
     <GalleryPreviewDialog
       v-if="previewItem"
       :item="previewItem"
-      :media-url="getMediaHttpUrl(previewItem.name)"
       @close="closePreview"
       @download="onPreviewDownload"
     />
