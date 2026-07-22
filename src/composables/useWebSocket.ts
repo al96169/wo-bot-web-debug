@@ -1833,55 +1833,24 @@ export function useWebSocket() {
         break;
       }
       case "camera_record_result": {
-        // 录制完成结果：可能包含文件信息或仅状态
-        if (typeof data.is_recording === "boolean") {
-          // 状态确认消息
-          robotStore.setRecordingUiState(data.is_recording as boolean, data.camera_id as number | undefined);
-          if (data.is_recording) {
-            appStore.showToast("录像已开始", "success");
-          } else {
-            appStore.showToast("录像已停止", "info");
-          }
-        } else if (data.file_name) {
-          // 录制完成，返回文件信息
+        // 录制操作响应（乐观更新已在按钮点击时完成，这里只做确认/回滚）
+        const rOk = data.success !== false;
+        if (!rOk) {
+          robotStore.setRecordingUiState(false);
+          appStore.showToast(`录像操作失败: ${String(data.error ?? data.message ?? "")}`, "error");
+        } else if (data.is_recording === true) {
+          appStore.showToast("录像已开始", "success");
+        } else if (data.is_recording === false && data.file_name) {
           const duration = typeof data.duration_s === "number" ? data.duration_s : 0;
           const sizeMB = typeof data.size_bytes === "number" ? (data.size_bytes / 1024 / 1024).toFixed(1) : "?";
           appStore.showToast(`录像完成: ${duration}s, ${sizeMB}MB`, "success");
-          robotStore.setRecordingUiState(false, data.camera_id as number | undefined);
-          robotStore.addCmdLog({
-            time: new Date().toLocaleTimeString(),
-            direction: "recv",
-            type: "camera_record",
-            data: `录像完成 ${data.file_name} ${duration}s ${sizeMB}MB`,
-          });
-        } else {
-          const success = data.success !== false;
-          appStore.showToast(success ? "录像操作成功" : "录像操作失败", success ? "info" : "error");
+        } else if (data.is_recording === false) {
+          appStore.showToast("录像已停止", "info");
         }
         break;
       }
-      case "camera_record_status": {
-        // 每 5 秒推送的录制状态（WS relay 可能双层包裹 data）
-        let rdata = data as Record<string, unknown>;
-        if (rdata.data && typeof rdata.data === "object") rdata = rdata.data as Record<string, unknown>;
-        robotStore.setCameraRecordStatus({
-          is_recording: Boolean(rdata.is_recording),
-          camera_id: typeof rdata.camera_id === "number" ? rdata.camera_id : undefined,
-          elapsed_s: typeof rdata.elapsed_s === "number" ? rdata.elapsed_s : undefined,
-          file_size_bytes: typeof rdata.file_size_bytes === "number" ? rdata.file_size_bytes : undefined,
-        });
-        break;
-      }
-      case "camera_recording_ui_state": {
-        // 多客户端同步录制 UI 状态（WS relay 可能双层包裹 data）
-        let udata = data as Record<string, unknown>;
-        if (udata.data && typeof udata.data === "object") udata = udata.data as Record<string, unknown>;
-        robotStore.setRecordingUiState(
-          Boolean(udata.is_recording),
-          typeof udata.camera_id === "number" ? udata.camera_id : undefined,
-        );
-        break;
-      }
+      // camera_record_status 和 camera_recording_ui_state 仅通过 DataChannel 广播
+      // WS handler 不处理，避免双通道覆盖
       case "camera_media_list_result": {
         const total = typeof data.total === "number" ? data.total : 0;
         const page = typeof data.page === "number" ? data.page : 1;

@@ -86,10 +86,11 @@ function handleCapture(): void {
   });
 }
 
-/** 录像按钮：切换开始/停止 */
+/** 录像按钮：切换开始/停止（乐观更新） */
 function handleRecordToggle(): void {
   if (isRecording.value) {
-    // 停止录像
+    // 停止录像 — 立即更新本地状态
+    robotStore.setRecordingUiState(false, robotStore.cameraRecord.camera_id ?? undefined);
     sendCameraRecordStop();
     robotStore.addCmdLog({
       time: textTime(),
@@ -98,9 +99,9 @@ function handleRecordToggle(): void {
       data: "停止录像",
     });
   } else {
-    // 开始录像（主摄）
+    // 开始录像 — 立即更新本地状态
+    robotStore.setRecordingUiState(true, mainCameraId.value);
     sendCameraRecordStart(mainCameraId.value);
-    appStore.showToast("正在开始录像...", "info");
     robotStore.addCmdLog({
       time: textTime(),
       direction: "send",

@@ -915,17 +915,22 @@ export function useWebRTC() {
         break;
       }
       case "camera_record_result": {
-        if (typeof data.is_recording === "boolean") {
-          robotStore.setRecordingUiState(data.is_recording as boolean, data.camera_id as number | undefined);
-          appStore.showToast(data.is_recording ? "录像已开始" : "录像已停止", data.is_recording ? "success" : "info");
-        } else if (data.file_name) {
+        // 录制操作响应（乐观更新已在按钮点击时完成，这里只做确认/回滚）
+        const ok = data.success !== false;
+        if (!ok) {
+          // 失败时回滚状态
+          robotStore.setRecordingUiState(false);
+          appStore.showToast(`录像操作失败: ${String(data.error ?? data.message ?? "")}`, "error");
+        } else if (data.is_recording === true) {
+          // 开始录像确认
+          appStore.showToast("录像已开始", "success");
+        } else if (data.is_recording === false && data.file_name) {
+          // 停止录像确认，附带文件信息
           const duration = typeof data.duration_s === "number" ? data.duration_s : 0;
           const sizeMB = typeof data.size_bytes === "number" ? (data.size_bytes / 1024 / 1024).toFixed(1) : "?";
           appStore.showToast(`录像完成: ${duration}s, ${sizeMB}MB`, "success");
-          robotStore.setRecordingUiState(false, data.camera_id as number | undefined);
-        } else {
-          const ok = data.success !== false;
-          appStore.showToast(ok ? "录像操作成功" : "录像操作失败", ok ? "info" : "error");
+        } else if (data.is_recording === false) {
+          appStore.showToast("录像已停止", "info");
         }
         break;
       }
