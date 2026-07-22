@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch, onUnmounted } from "vue";
 import type { GalleryItem } from "@/types";
+import { useWebSocket, onMessage } from "@/composables/useWebSocket";
 
 const props = defineProps<{
   item: GalleryItem;
-  /** 媒体文件 HTTP URL（直连模式由父组件通过 getMediaHttpUrl 构造） */
-  mediaUrl?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -13,19 +12,63 @@ const emit = defineEmits<{
   download: [fileName: string];
 }>();
 
-const isVideo = computed(() => props.item.type === "video");
+const { requestMediaDownload } = useWebSocket();
 
-/** 缩略图 data URI（用于图片预览 / 视频封面） */
+const isVideo = computed(() => props.item.type === "video");
+const videoBlobUrl = ref<string | null>(null);
+const videoLoading = ref(false);
+const videoError = ref(false);
+
+/** 缩略图 data URI */
 const thumbSrc = computed(() => {
   if (props.item.thumbnail_base64) {
-    const mime = isVideo.value ? "image/jpeg" : "image/jpeg";
-    return `data:${mime};base64,${props.item.thumbnail_base64}`;
+    return `data:image/jpeg;base64,${props.item.thumbnail_base64}`;
   }
   return null;
 });
 
-/** 视频播放源：优先 download_url，其次父组件传入的 HTTP URL */
-const videoSrc = computed(() => props.item.download_url || props.mediaUrl || null);
+/** 监听 DC/WS 消息，捕获视频下载响应 */
+let _removeListener: (() => void) | null = null;
+
+watch(
+  () => props.item,
+  async (item) => {
+    if (!item || item.type !== "video") return;
+    // 请求视频文件
+    videoLoading.value = true;
+    videoError.value = false;
+    videoBlobUrl.value = null;
+    requestMediaDownload(item.name);
+
+    // 监听下载响应
+    _removeListener?.();
+    _removeListener = onMessage((msg) => {
+      if (msg.type === "camera_media_download_data") {
+        const data = msg.data as Record<string, unknown>;
+        if (data?.file_name === item.name && data.file_base64) {
+          const base64 = String(data.file_base64);
+          const byteChars = atob(base64);
+          const byteNumbers = new Array(byteChars.length);
+          for (let i = 0; i < byteChars.length; i++) {
+            byteNumbers[i] = byteChars.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: "video/mp4" });
+          videoBlobUrl.value = URL.createObjectURL(blob);
+          videoLoading.value = false;
+          _removeListener?.();
+          _removeListener = null;
+        }
+      }
+    });
+  },
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  _removeListener?.();
+  if (videoBlobUrl.value) URL.revokeObjectURL(videoBlobUrl.value);
+});
 
 function formatSize(bytes: number): string {
   if (!bytes) return "0 B";
@@ -74,13 +117,17 @@ function onDownload() {
         <!-- 视频预览 -->
         <template v-else>
           <video
-            v-if="videoSrc"
-            :src="videoSrc"
+            v-if="videoBlobUrl"
+            :src="videoBlobUrl"
             :poster="thumbSrc || undefined"
             controls
             autoplay
             class="preview-video"
           ></video>
+          <div v-else-if="videoLoading" class="preview-empty">
+            <img v-if="thumbSrc" :src="thumbSrc" alt="cover" class="preview-cover" />
+            <p>⏳ 加载视频中...</p>
+          </div>
           <div v-else class="preview-empty">
             <img v-if="thumbSrc" :src="thumbSrc" alt="cover" class="preview-cover" />
             <p>🎬 视频封面</p>

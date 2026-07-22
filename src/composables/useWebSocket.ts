@@ -257,6 +257,15 @@ export function onMessage(fn: MessageListener): () => void {
   };
 }
 
+/** 通知所有消息监听器（供 DC handler 调用） */
+export function notifyMessageListeners(msg: { type: string; data?: any }): void {
+  _messageListeners.forEach((fn) => {
+    try {
+      fn(msg);
+    } catch {}
+  });
+}
+
 interface WsMsg {
   type: string;
   data?: Record<string, unknown>;
@@ -1912,20 +1921,17 @@ export function useWebSocket() {
         break;
       }
       case "camera_media_download_data": {
-        // 小文件: file_base64; 大文件: download_url
+        // 通过 base64 数据下载（统一走 WS/DC 传输，不依赖 HTTP API）
         const fileName = String(data.file_name ?? "");
         if (!fileName) break;
-        if (data.download_url) {
-          // 大文件通过 HTTP URL 下载
-          triggerBrowserDownload(String(data.download_url), fileName);
-          appStore.showToast(`开始下载: ${fileName}`, "info");
-        } else if (data.file_base64) {
-          // 小文件通过 base64 数据下载
+        if (data.file_base64) {
           const base64 = String(data.file_base64);
           const isVideo = /\.(mp4|mov|avi|mkv)$/i.test(fileName);
           const mime = isVideo ? "video/mp4" : "image/jpeg";
           triggerBase64Download(base64, fileName, mime);
           appStore.showToast(`下载完成: ${fileName}`, "success");
+        } else {
+          appStore.showToast(`下载失败: 未收到文件数据`, "error");
         }
         break;
       }

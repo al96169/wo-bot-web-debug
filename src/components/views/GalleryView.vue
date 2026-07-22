@@ -8,7 +8,7 @@ import type { GalleryItem } from "@/types";
 
 const appStore = useAppStore();
 const robotStore = useRobotStore();
-const { requestGalleryList, sendGalleryDelete, requestMediaDownload, getMediaHttpUrl } = useWebSocket();
+const { requestGalleryList, sendGalleryDelete, requestMediaDownload } = useWebSocket();
 
 /** 布局模式：grid 网格 / list 列表 */
 const layoutMode = ref<"grid" | "list">("grid");
@@ -131,53 +131,21 @@ function onPreviewDownload(fileName: string): void {
 
 /* ---- 下载 ---- */
 /**
- * 下载单个文件：
- * - 优先通过 WS requestMediaDownload 获取（小文件返回 base64，大文件返回 download_url）
- * - 直连模式下大文件可直接通过 HTTP API 下载
+ * 下载单个文件：统一通过 DC/WS 请求 base64 传输（不依赖 HTTP API）
  */
 function downloadFile(fileName: string): void {
-  const httpUrl = getMediaHttpUrl(fileName);
-  if (httpUrl) {
-    // 直连模式：直接通过 HTTP API 下载（支持大文件，浏览器原生处理）
-    const link = document.createElement("a");
-    link.href = httpUrl;
-    link.download = fileName;
-    link.rel = "noopener";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    appStore.showToast(`开始下载: ${fileName}`, "info");
-  } else {
-    // 信令模式或无 HTTP：通过 WS 请求下载（小文件 base64，大文件 download_url）
-    requestMediaDownload(fileName);
-  }
+  requestMediaDownload(fileName);
+  appStore.showToast(`正在下载: ${fileName}`, "info");
 }
 
 /** 批量下载选中的文件 */
 function downloadSelected(): void {
   const names = Array.from(selectedNames.value);
   if (names.length === 0) return;
-  let count = 0;
   for (const name of names) {
-    const httpUrl = getMediaHttpUrl(name);
-    if (httpUrl) {
-      // 错开下载请求，避免浏览器拦截
-      setTimeout(() => {
-        const link = document.createElement("a");
-        link.href = httpUrl;
-        link.download = name;
-        link.rel = "noopener";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }, count * 300);
-      count++;
-    } else {
-      requestMediaDownload(name);
-      count++;
-    }
+    requestMediaDownload(name);
   }
-  appStore.showToast(`开始下载 ${names.length} 个文件`, "info");
+  appStore.showToast(`正在下载 ${names.length} 个文件`, "info");
 }
 
 /* ---- 删除 ---- */

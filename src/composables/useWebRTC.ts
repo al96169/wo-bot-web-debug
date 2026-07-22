@@ -12,7 +12,7 @@ import type {
   ServiceInfo,
   SoftwareTask,
 } from "../types";
-import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime } from "./useWebSocket";
+import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime, notifyMessageListeners } from "./useWebSocket";
 
 /* ============================================================
  * wo-bot-web-debug - WebRTC 连接管理
@@ -1016,15 +1016,8 @@ export function useWebRTC() {
       case "camera_media_download_data": {
         const fileName = String(data.file_name ?? "");
         if (!fileName) break;
-        if (data.download_url) {
-          // 大文件通过 HTTP URL 下载
-          const link = document.createElement("a");
-          link.href = String(data.download_url);
-          link.download = fileName;
-          link.click();
-          appStore.showToast(`开始下载: ${fileName}`, "info");
-        } else if (data.file_base64) {
-          // 小文件通过 base64 数据下载
+        if (data.file_base64) {
+          // 通过 base64 数据下载（小文件）
           const base64 = String(data.file_base64);
           const isVideo = /\.(mp4|mov|avi|mkv)$/i.test(fileName);
           const mime = isVideo ? "video/mp4" : "image/jpeg";
@@ -1040,6 +1033,9 @@ export function useWebRTC() {
         console.log("[DC.msg] unhandled:", msgType, JSON.stringify(data).slice(0, 200));
         break;
     }
+
+    // 通知所有消息监听器（与 WS handler 保持一致）
+    notifyMessageListeners({ type: msgType, data });
   }
 
   /** 关闭连接 */
