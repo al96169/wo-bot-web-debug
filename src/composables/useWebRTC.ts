@@ -313,6 +313,10 @@ export function useWebRTC() {
         appStore.setSSHConnected(true);
         appStore.showToast("WebRTC 业务通道已建立", "success");
         channel.send(JSON.stringify({ type: "subscribe", data: { events: ["status"] } }));
+        // DC 连接后立即查询录制状态，同步按钮
+        setTimeout(() => {
+          channel.send(JSON.stringify({ type: "camera_record_query", data: {} }));
+        }, 500);
       };
 
       channel.onmessage = (event: MessageEvent) => {
@@ -917,15 +921,25 @@ export function useWebRTC() {
       case "camera_record_result": {
         // 录制操作响应（乐观更新已在按钮点击时完成，这里只做确认/回滚）
         const ok = data.success !== false;
+        const errMsg = String(data.error ?? data.message ?? "");
         if (!ok) {
-          // 失败时回滚状态
-          robotStore.setRecordingUiState(false);
-          appStore.showToast(`录像操作失败: ${String(data.error ?? data.message ?? "")}`, "error");
+          // 错误回滚：根据错误信息判断实际状态
+          if (errMsg.includes("Already recording")) {
+            // 机器人已在录制中，同步前端状态
+            robotStore.setRecordingUiState(true, data.camera_id as number | undefined);
+            appStore.showToast("已在录制中", "info");
+          } else if (errMsg.includes("Not recording")) {
+            // 机器人未在录制，同步前端状态
+            robotStore.setRecordingUiState(false);
+            appStore.showToast("未在录制", "info");
+          } else {
+            // 其他错误，回滚为 false
+            robotStore.setRecordingUiState(false);
+            appStore.showToast(`录像操作失败: ${errMsg}`, "error");
+          }
         } else if (data.is_recording === true) {
-          // 开始录像确认
           appStore.showToast("录像已开始", "success");
         } else if (data.is_recording === false && data.file_name) {
-          // 停止录像确认，附带文件信息
           const duration = typeof data.duration_s === "number" ? data.duration_s : 0;
           const sizeMB = typeof data.size_bytes === "number" ? (data.size_bytes / 1024 / 1024).toFixed(1) : "?";
           appStore.showToast(`录像完成: ${duration}s, ${sizeMB}MB`, "success");

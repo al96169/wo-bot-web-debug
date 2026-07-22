@@ -1835,9 +1835,18 @@ export function useWebSocket() {
       case "camera_record_result": {
         // 录制操作响应（乐观更新已在按钮点击时完成，这里只做确认/回滚）
         const rOk = data.success !== false;
+        const rErrMsg = String(data.error ?? data.message ?? "");
         if (!rOk) {
-          robotStore.setRecordingUiState(false);
-          appStore.showToast(`录像操作失败: ${String(data.error ?? data.message ?? "")}`, "error");
+          if (rErrMsg.includes("Already recording")) {
+            robotStore.setRecordingUiState(true, data.camera_id as number | undefined);
+            appStore.showToast("已在录制中", "info");
+          } else if (rErrMsg.includes("Not recording")) {
+            robotStore.setRecordingUiState(false);
+            appStore.showToast("未在录制", "info");
+          } else {
+            robotStore.setRecordingUiState(false);
+            appStore.showToast(`录像操作失败: ${rErrMsg}`, "error");
+          }
         } else if (data.is_recording === true) {
           appStore.showToast("录像已开始", "success");
         } else if (data.is_recording === false && data.file_name) {
