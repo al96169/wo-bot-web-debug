@@ -1197,9 +1197,6 @@ export function useWebSocket() {
   /** 处理所有消息（信令 + 业务响应，统一通过 WebSocket） */
   function handleSignalingMessage(msg: WsMsg): void {
     const data = msg.data ?? {};
-    if (msg.type && msg.type.startsWith("camera_")) {
-      console.log("[WS-Debug] handleSignalingMessage:", msg.type, JSON.stringify(data).slice(0, 200));
-    }
     switch (msg.type) {
       // ---- 信令层 ----
       case "connected":
@@ -1864,20 +1861,24 @@ export function useWebSocket() {
         break;
       }
       case "camera_record_status": {
-        // 每 5 秒推送的录制状态
+        // 每 5 秒推送的录制状态（WS relay 可能双层包裹 data）
+        let rdata = data as Record<string, unknown>;
+        if (rdata.data && typeof rdata.data === "object") rdata = rdata.data as Record<string, unknown>;
         robotStore.setCameraRecordStatus({
-          is_recording: Boolean(data.is_recording),
-          camera_id: typeof data.camera_id === "number" ? data.camera_id : undefined,
-          elapsed_s: typeof data.elapsed_s === "number" ? data.elapsed_s : undefined,
-          file_size_bytes: typeof data.file_size_bytes === "number" ? data.file_size_bytes : undefined,
+          is_recording: Boolean(rdata.is_recording),
+          camera_id: typeof rdata.camera_id === "number" ? rdata.camera_id : undefined,
+          elapsed_s: typeof rdata.elapsed_s === "number" ? rdata.elapsed_s : undefined,
+          file_size_bytes: typeof rdata.file_size_bytes === "number" ? rdata.file_size_bytes : undefined,
         });
         break;
       }
       case "camera_recording_ui_state": {
-        // 多客户端同步录制 UI 状态（红色边框）
+        // 多客户端同步录制 UI 状态（WS relay 可能双层包裹 data）
+        let udata = data as Record<string, unknown>;
+        if (udata.data && typeof udata.data === "object") udata = udata.data as Record<string, unknown>;
         robotStore.setRecordingUiState(
-          Boolean(data.is_recording),
-          typeof data.camera_id === "number" ? data.camera_id : undefined,
+          Boolean(udata.is_recording),
+          typeof udata.camera_id === "number" ? udata.camera_id : undefined,
         );
         break;
       }
