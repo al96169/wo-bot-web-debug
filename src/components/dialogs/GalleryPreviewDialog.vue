@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from "vue";
 import type { GalleryItem } from "@/types";
-import { useWebSocket, onChunkedDownload } from "@/composables/useWebSocket";
+import { useWebSocket, onChunkedDownload, connectionMode } from "@/composables/useWebSocket";
 
 const props = defineProps<{
   item: GalleryItem;
@@ -12,12 +12,11 @@ const emit = defineEmits<{
   download: [fileName: string];
 }>();
 
-const { requestMediaDownload } = useWebSocket();
+const { requestMediaDownload, getMediaHttpUrl } = useWebSocket();
 
 const isVideo = computed(() => props.item.type === "video");
 const videoBlobUrl = ref<string | null>(null);
 const videoLoading = ref(false);
-const downloadProgress = ref(0);
 
 /** 缩略图 data URI */
 const thumbSrc = computed(() => {
@@ -27,25 +26,34 @@ const thumbSrc = computed(() => {
   return null;
 });
 
-/** 监听分块下载完成 */
+/** 视频直连 HTTP URL（直连模式，浏览器原生流式播放） */
+const videoHttpUrl = computed(() => {
+  if (!isVideo.value || connectionMode.value !== "direct") return null;
+  return getMediaHttpUrl(props.item.name);
+});
+
+/** 监听分块下载完成（信令模式） */
 let _unregisterChunked: (() => void) | null = null;
 
 watch(
   () => props.item,
   (item) => {
     if (!item || item.type !== "video") return;
-    // 请求视频文件（后端会分块发送）
+    // 直连模式：直接用 HTTP URL 播放，无需等待
+    if (connectionMode.value === "direct") {
+      videoLoading.value = false;
+      videoBlobUrl.value = null;
+      return;
+    }
+    // 信令模式：通过 DC 分块下载
     videoLoading.value = true;
     videoBlobUrl.value = null;
-    downloadProgress.value = 0;
     requestMediaDownload(item.name);
 
-    // 注册分块下载完成回调
     _unregisterChunked?.();
     _unregisterChunked = onChunkedDownload(item.name, (blobUrl) => {
       videoBlobUrl.value = blobUrl;
       videoLoading.value = false;
-      downloadProgress.value = 100;
     });
   },
   { immediate: true },
@@ -102,8 +110,18 @@ function onDownload() {
         </template>
         <!-- 视频预览 -->
         <template v-else>
+          <!-- 直连模式：HTTP 流式播放 -->
           <video
-            v-if="videoBlobUrl"
+            v-if="videoHttpUrl"
+            :src="videoHttpUrl"
+            :poster="thumbSrc || undefined"
+            controls
+            autoplay
+            class="preview-video"
+          ></video>
+          <!-- 信令模式：分块下载完成后播放 -->
+          <video
+            v-else-if="videoBlobUrl"
             :src="videoBlobUrl"
             :poster="thumbSrc || undefined"
             controls
