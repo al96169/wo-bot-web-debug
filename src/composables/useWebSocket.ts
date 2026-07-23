@@ -2039,6 +2039,21 @@ export function useWebSocket() {
         // 分块传输完成确认（下载/预览已由 onChunkedDownload 回调处理）
         break;
       }
+      case "camera_stream_quality_ack": {
+        const mode = String(data.mode || "high") as "auto" | "high" | "medium" | "low";
+        robotStore.setStreamQuality(mode);
+        const res = data.resolution as Record<string, number> | undefined;
+        const resStr = res?.width ? `${res.width}x${res.height}` : "";
+        const labelMap: Record<string, string> = { auto: "自动", high: "高画质", medium: "中画质", low: "低画质" };
+        appStore.showToast(`画质已切换至 ${labelMap[mode] || mode} ${resStr}`, "info");
+        break;
+      }
+      case "camera_stream_quality_changed": {
+        const mode = String(data.mode || "high") as "auto" | "high" | "medium" | "low";
+        robotStore.setStreamQuality(mode);
+        appStore.showToast(`画质自动切换至 ${mode === "high" ? "高画质" : mode === "medium" ? "中画质" : "低画质"}`, "info");
+        break;
+      }
     }
     // 通知所有消息监听器
     _messageListeners.forEach((fn) => {
@@ -2078,6 +2093,9 @@ export function useWebSocket() {
   }
   function requestCameraStatus(): void {
     _send({ type: "camera", data: { action: "list" } });
+  }
+  function sendStreamQuality(mode: "auto" | "high" | "medium" | "low"): void {
+    _send({ type: "camera_stream_quality", data: { mode } });
   }
   function sendGimbal(axis: string, angle: number): void {
     _send({ type: "gimbal", data: { axis, angle } });
@@ -2133,9 +2151,9 @@ export function useWebSocket() {
 
   /* ---- 拍照 / 录像 / 图库 (R00034) ---- */
 
-  /** 拍照指令（不传 cameraIds 则对所有已注册摄像头各拍一张） */
-  function sendCameraCapture(cameraIds?: number[]): void {
-    _send({ type: "camera_capture", data: { camera_ids: cameraIds } });
+  /** 拍照指令（对所有已注册摄像头各拍一张，支持画质参数） */
+  function sendCameraCapture(quality?: string): void {
+    _send({ type: "camera_capture", data: { quality: quality || "high" } });
   }
   /** 开始录像（仅主摄） */
   function sendCameraRecordStart(cameraId: number, quality?: string, resolution?: string): void {
@@ -2344,6 +2362,7 @@ export function useWebSocket() {
     sendServiceStatus,
     sendServiceControl,
     sendMusicCommand,
+    sendStreamQuality,
     sendCameraCapture,
     sendCameraRecordStart,
     sendCameraRecordStop,

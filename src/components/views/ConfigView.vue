@@ -444,6 +444,24 @@ function setCameraName(index: number, name: string) {
             <option value="webrtc">WebRTC</option>
           </select>
         </div>
+        <div class="config-item">
+          <div class="config-item-header"><label>拍照画质</label></div>
+          <p class="config-item-desc">拍摄照片时的画面质量。高画质占用更多带宽。</p>
+          <select v-model="editConfig.camera.capture_quality" class="config-select">
+            <option value="high">高画质</option>
+            <option value="medium">中画质</option>
+            <option value="low">低画质</option>
+          </select>
+        </div>
+        <div class="config-item">
+          <div class="config-item-header"><label>录制画质</label></div>
+          <p class="config-item-desc">录制视频时的画面质量。高画质文件更大。</p>
+          <select v-model="editConfig.camera.record_quality" class="config-select">
+            <option value="high">高画质</option>
+            <option value="medium">中画质</option>
+            <option value="low">低画质</option>
+          </select>
+        </div>
 
         <!-- 云台配置（摄像头面板内） -->
         <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border)">

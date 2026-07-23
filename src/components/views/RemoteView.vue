@@ -22,6 +22,7 @@ const {
   sendCameraCapture,
   sendCameraRecordStart,
   sendCameraRecordStop,
+  sendStreamQuality,
 } = useWebSocket();
 const {
   videoStream0,
@@ -73,19 +74,20 @@ function formatRecordSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-/** 拍照：对所有已注册摄像头各拍一张 */
+/** 拍照：对所有已注册摄像头各拍一张，使用配置中的画质 */
 function handleCapture(): void {
-  sendCameraCapture();
-  appStore.showToast("正在拍照...", "info");
+  const quality = robotStore.robotConfig?.camera?.capture_quality || "high";
+  sendCameraCapture(quality);
+  appStore.showToast(`正在拍照 (${qualityLabelMap[quality] || quality})...`, "info");
   robotStore.addCmdLog({
     time: textTime(),
     direction: "send",
     type: "camera_capture",
-    data: "拍照指令已发送",
+    data: `拍照 (${qualityLabelMap[quality] || quality})`,
   });
 }
 
-/** 录像按钮：切换开始/停止（乐观更新） */
+/** 录像按钮：切换开始/停止（乐观更新），使用配置中的画质 */
 function handleRecordToggle(): void {
   if (isRecording.value) {
     // 停止录像 — 立即更新本地状态
@@ -98,16 +100,40 @@ function handleRecordToggle(): void {
       data: "停止录像",
     });
   } else {
-    // 开始录像 — 立即更新本地状态
+    // 开始录像 — 立即更新本地状态，使用配置中的录制画质
+    const recordQuality = robotStore.robotConfig?.camera?.record_quality || "high";
     robotStore.setRecordingUiState(true, mainCameraId.value);
-    sendCameraRecordStart(mainCameraId.value);
+    sendCameraRecordStart(mainCameraId.value, recordQuality);
     robotStore.addCmdLog({
       time: textTime(),
       direction: "send",
       type: "camera_record_start",
-      data: `开始录像 摄像头${mainCameraId.value}`,
+      data: `开始录像 摄像头${mainCameraId.value} (${qualityLabelMap[recordQuality] || recordQuality})`,
     });
   }
+}
+
+/** 画质标签映射 */
+const qualityLabelMap: Record<string, string> = { auto: "自动", high: "高画质", medium: "中画质", low: "低画质" };
+/** 可选画质列表 */
+const qualityOptions: { value: string; label: string }[] = [
+  { value: "auto", label: "自动" },
+  { value: "high", label: "高画质" },
+  { value: "medium", label: "中画质" },
+  { value: "low", label: "低画质" },
+];
+
+/** 切换摄像头直播画质 */
+function handleQualityChange(mode: "auto" | "high" | "medium" | "low"): void {
+  robotStore.setStreamQuality(mode);
+  sendStreamQuality(mode);
+  appStore.showToast(`画质切换中: ${qualityLabelMap[mode]}`, "info");
+  robotStore.addCmdLog({
+    time: textTime(),
+    direction: "send",
+    type: "camera_stream_quality",
+    data: `画质 → ${qualityLabelMap[mode]}`,
+  });
 }
 
 /** 自动停止录像（切换面板 / 网页切后台时调用） */
@@ -1112,6 +1138,16 @@ onDeactivated(() => {
             >
               {{ isRecording ? "⏹ 停止" : "⏺ 录像" }}
             </button>
+            <select
+              class="action-btn quality-select"
+              :value="robotStore.streamQuality"
+              @change="handleQualityChange(($event.target as HTMLSelectElement).value as any)"
+              title="摄像头直播画质"
+            >
+              <option v-for="opt in qualityOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
           </div>
           <div v-if="isRecording" class="record-status-row">
             <span class="record-dot"></span>
@@ -1356,6 +1392,27 @@ onDeactivated(() => {
   border-color: var(--danger);
   color: #fff;
   animation: record-pulse 1.5s ease-in-out infinite;
+}
+/* 画质选择器 */
+select.action-btn.quality-select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 24px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+select.action-btn.quality-select:hover {
+  background-color: var(--accent);
+  color: var(--bg-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23000'/%3E%3C/svg%3E");
+}
+select.action-btn.quality-select option {
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 @keyframes record-pulse {
   0%, 100% { opacity: 1; }

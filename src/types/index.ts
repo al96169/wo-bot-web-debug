@@ -421,6 +421,10 @@ export interface CameraConfig {
   flip_horizontal?: boolean;
   /** 画面垂直翻转（倒置） */
   flip_vertical?: boolean;
+  /** 拍照画质: high | medium | low */
+  capture_quality?: string;
+  /** 录制画质: high | medium | low */
+  record_quality?: string;
 }
 
 /** 云台配置 */

@@ -29,6 +29,8 @@ export const DEFAULT_CONFIG: RobotConfig = {
     gimbal_tilt_bind: false,
     flip_horizontal: false,
     flip_vertical: false,
+    capture_quality: "high",
+    record_quality: "high",
   },
   gimbal: {
     enabled: false,

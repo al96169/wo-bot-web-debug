@@ -1039,6 +1039,19 @@ export function useWebRTC() {
       case "camera_media_download_done":
         // 分块传输完成确认
         break;
+      case "camera_stream_quality_ack": {
+        const mode = String(data.mode || "high") as "auto" | "high" | "medium" | "low";
+        robotStore.setStreamQuality(mode);
+        const labelMap: Record<string, string> = { auto: "自动", high: "高画质", medium: "中画质", low: "低画质" };
+        appStore.showToast(`画质已切换至 ${labelMap[mode] || mode}`, "info");
+        break;
+      }
+      case "camera_stream_quality_changed": {
+        const mode = String(data.mode || "high") as "auto" | "high" | "medium" | "low";
+        robotStore.setStreamQuality(mode);
+        appStore.showToast(`画质自动切换至 ${mode === "high" ? "高画质" : mode === "medium" ? "中画质" : "低画质"}`, "info");
+        break;
+      }
       default:
         console.log("[DC.msg] unhandled:", msgType, JSON.stringify(data).slice(0, 200));
         break;

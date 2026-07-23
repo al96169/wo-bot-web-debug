@@ -119,6 +119,9 @@ export const useRobotStore = defineStore("robot", {
     /** 图库列表是否正在加载 */
     galleryLoading: false as boolean,
 
+    /** 摄像头直播画质模式（前端持久化） */
+    streamQuality: (localStorage.getItem("wo-bot.stream-quality") || "auto") as "auto" | "high" | "medium" | "low",
+
     /** 摄像头录制状态 */
     cameraRecord: {
       is_recording: false,
@@ -445,6 +448,11 @@ export const useRobotStore = defineStore("robot", {
 
     setGalleryLoading(loading: boolean): void {
       this.galleryLoading = loading;
+    },
+
+    setStreamQuality(quality: "auto" | "high" | "medium" | "low"): void {
+      this.streamQuality = quality;
+      localStorage.setItem("wo-bot.stream-quality", quality);
     },
 
     resetGallery(): void {
