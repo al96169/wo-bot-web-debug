@@ -991,25 +991,6 @@ onDeactivated(() => {
   <div class="view active">
     <div class="remote-layout">
       <div class="remote-controls">
-        <!-- 拍照 / 录像 操作栏 -->
-        <div v-if="cameraCaptureAvailable" class="camera-actions">
-          <button class="cam-action-btn capture" @click="handleCapture" title="拍照（所有已注册摄像头）">
-            📷 拍照
-          </button>
-          <button
-            class="cam-action-btn record"
-            :class="{ recording: isRecording }"
-            @click="handleRecordToggle"
-            :title="isRecording ? '停止录像' : '开始录像（主摄）'"
-          >
-            {{ isRecording ? "⏹ 停止录像" : "⏺ 录像" }}
-          </button>
-          <span v-if="isRecording" class="record-status">
-            <span class="record-dot"></span>
-            REC {{ formatRecordTime(recordElapsed) }} · {{ formatRecordSize(recordFileSize) }}
-          </span>
-        </div>
-
         <!-- Dual Camera Row -->
         <div class="camera-dual">
           <!-- 左摄像头 -->
@@ -1119,6 +1100,22 @@ onDeactivated(() => {
             <button v-if="gimbalAvailable" class="action-btn center" @click="sendGimbalCenter()">🎯 回中</button>
             <button class="action-btn danger" @click="handleAction('emergency')">🛑 急停</button>
             <button class="action-btn center" @click="handleAction('emergency_release')">✅ 释放</button>
+            <button v-if="cameraCaptureAvailable" class="action-btn capture" @click="handleCapture" title="拍照（所有已注册摄像头）">
+              📷 拍照
+            </button>
+            <button
+              v-if="cameraCaptureAvailable"
+              class="action-btn record"
+              :class="{ recording: isRecording }"
+              @click="handleRecordToggle"
+              :title="isRecording ? '停止录像' : '开始录像（主摄）'"
+            >
+              {{ isRecording ? "⏹ 停止" : "⏺ 录像" }}
+            </button>
+          </div>
+          <div v-if="isRecording" class="record-status-row">
+            <span class="record-dot"></span>
+            REC {{ formatRecordTime(recordElapsed) }} · {{ formatRecordSize(recordFileSize) }}
           </div>
           <div v-if="gimbalAvailable" class="gimbal-status">
             <span class="gimbal-angle">水平: {{ robotStore.gimbal.pan }}°</span>
@@ -1338,49 +1335,23 @@ onDeactivated(() => {
   cursor: not-allowed;
 }
 
-/* ===== 拍照 / 录像 操作栏 ===== */
-.camera-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  flex-shrink: 0;
-}
-.cam-action-btn {
-  padding: 8px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
-}
-.cam-action-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--accent);
-}
-.cam-action-btn.capture {
+.action-btn.capture {
   border-color: var(--accent);
   color: var(--accent);
 }
-.cam-action-btn.capture:hover {
+.action-btn.capture:hover {
   background: var(--accent);
   color: var(--bg-primary);
 }
-.cam-action-btn.record {
+.action-btn.record {
   border-color: var(--danger);
   color: var(--danger);
 }
-.cam-action-btn.record:hover {
+.action-btn.record:hover {
   background: var(--danger);
   color: #fff;
 }
-.cam-action-btn.record.recording {
+.action-btn.record.recording {
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
@@ -1390,14 +1361,16 @@ onDeactivated(() => {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
-.record-status {
+.record-status-row {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   font-size: 12px;
   color: var(--danger);
   font-variant-numeric: tabular-nums;
   font-family: "SF Mono", "Fira Code", monospace;
+  padding: 4px 0;
 }
 .record-dot {
   width: 8px;
