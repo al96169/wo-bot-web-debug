@@ -23,6 +23,7 @@ import { useDiscovery } from "@/composables/useDiscovery";
 import AppHeader from "@/components/AppHeader.vue";
 import AppSidebar from "@/components/AppSidebar.vue";
 import AppFooter from "@/components/AppFooter.vue";
+import UpdateBanner from "@/components/UpdateBanner.vue";
 import BottomPanel from "@/components/BottomPanel.vue";
 import QuickActionsView from "@/components/views/QuickActionsView.vue";
 import LogsView from "@/components/views/LogsView.vue";
@@ -516,6 +517,7 @@ const viewsMap: Record<ViewName, unknown> = {
     <div class="main-layout">
       <AppSidebar @select-device="handleSelectDevice" @add-device="handleAddDevice" />
       <main class="main-content">
+        <UpdateBanner v-if="!isRoutePage && appStore.connection === 'connected' && !authRequired" />
         <div class="views-container">
           <!-- 路由页面（auth/callback, cloud/*） -->
           <router-view v-if="isRoutePage" />

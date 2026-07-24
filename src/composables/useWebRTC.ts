@@ -10,6 +10,7 @@ import type {
   MusicStatus,
   MusicTrack,
   ServiceInfo,
+  Software,
   SoftwareTask,
 } from "../types";
 import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime, notifyMessageListeners, onChunkedDownload, handleChunkedDownloadMessage } from "./useWebSocket";
@@ -698,9 +699,10 @@ export function useWebRTC() {
         break;
       }
       case "software_updates_available": {
-        // 发现可更新软件，提示用户到软件管理页面升级
-        const updates = Array.isArray(data.updates) ? data.updates : [];
+        // 发现可更新软件，存入 store 触发全局横幅提示
+        const updates = Array.isArray(data.updates) ? (data.updates as Software[]) : [];
         if (updates.length > 0) {
+          robotStore.setSoftwareUpdatesAvailable(updates);
           const names = updates.map((u: any) => u.display_name || u.name).join("、");
           appStore.showToast(`发现 ${updates.length} 个可更新软件：${names}，请到软件管理页面升级`, "info");
         }

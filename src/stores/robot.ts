@@ -85,6 +85,11 @@ export const useRobotStore = defineStore("robot", {
     /** 软件操作任务（安装/卸载/升级） */
     softwareTasks: [] as SoftwareTask[],
 
+    /** 可更新的软件列表（服务端主动推送） */
+    softwareUpdatesAvailable: [] as Software[],
+    /** 用户是否已关闭更新提醒横幅（会话级，切换页面后重置） */
+    softwareUpdateBannerDismissed: false,
+
     /** 日志 */
     logs: [] as LogEntry[],
     /** 日志增量同步游标：已收到的最大行号+1（下次 since 请求的起始行） */
@@ -388,6 +393,17 @@ export const useRobotStore = defineStore("robot", {
 
     setAvailableSoftware(list: Software[]): void {
       this.softwareAvailable = list;
+    },
+
+    /** 设置可更新的软件列表（服务端主动推送） */
+    setSoftwareUpdatesAvailable(list: Software[]): void {
+      this.softwareUpdatesAvailable = list;
+      this.softwareUpdateBannerDismissed = false; // 新更新，重置横幅状态
+    },
+
+    /** 关闭更新提醒横幅（会话级） */
+    dismissSoftwareUpdateBanner(): void {
+      this.softwareUpdateBannerDismissed = true;
     },
 
     /** 创建一个新的软件操作任务 */
