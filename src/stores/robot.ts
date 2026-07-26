@@ -491,7 +491,7 @@ export const useRobotStore = defineStore("robot", {
 
     setCameraRecordStatus(status: CameraRecordStatus): void {
       this.cameraRecord.is_recording = status.is_recording;
-      this.cameraRecord.camera_id = status.camera_id ?? null;
+      this.cameraRecord.camera_id = status.camera_id ?? undefined;
       if (status.elapsed_s !== undefined) this.cameraRecord.elapsed_s = status.elapsed_s;
       if (status.file_size_bytes !== undefined) this.cameraRecord.file_size_bytes = status.file_size_bytes;
     },
@@ -499,7 +499,7 @@ export const useRobotStore = defineStore("robot", {
     /** 设置录制 UI 状态（多客户端同步） */
     setRecordingUiState(isRecording: boolean, cameraId?: number): void {
       this.cameraRecord.is_recording = isRecording;
-      this.cameraRecord.camera_id = cameraId ?? null;
+      this.cameraRecord.camera_id = cameraId ?? undefined;
       if (!isRecording) {
         this.cameraRecord.elapsed_s = 0;
         this.cameraRecord.file_size_bytes = 0;

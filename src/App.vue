@@ -15,7 +15,6 @@ import {
   setPendingShareCode,
   getStoredBinding,
 } from "@/composables/useWebSocket";
-import { connectionMode } from "@/composables/useWebSocket";
 import { useWebRTC } from "@/composables/useWebRTC";
 import { useMock } from "@/composables/useMock";
 import { useDiscovery } from "@/composables/useDiscovery";

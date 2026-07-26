@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useAuth } from "@/composables/useAuth";
-import {
-  getAuthorizedApps,
-  revokeApp,
-  type AuthorizedApp,
-} from "@/services/account";
+import { getAuthorizedApps, revokeApp, type AuthorizedApp } from "@/services/account";
 
 const { isAuthenticated, login } = useAuth();
 

@@ -607,7 +607,10 @@ function setCameraName(index: number, name: string) {
             ✓ 当前使用默认市场源
           </p>
           <p
-            v-if="editConfig.software_manager.market_endpoint !== (robotStore.robotConfig?.software_manager?.market_endpoint ?? 'market.wo-bot.com')"
+            v-if="
+              editConfig.software_manager.market_endpoint !==
+              (robotStore.robotConfig?.software_manager?.market_endpoint ?? 'market.wo-bot.com')
+            "
             class="reboot-warning"
           >
             ⚠️ 修改市场源地址需要重启 software_manager 子进程才能生效（应用配置后自动重启）
@@ -646,9 +649,7 @@ function setCameraName(index: number, name: string) {
             <label>操作超时时间</label>
             <span class="config-item-value">{{ editConfig.software_manager.operation_timeout }} 秒</span>
           </div>
-          <p class="config-item-desc">
-            安装/卸载/升级等 dpkg 操作的超时时间。网络较慢或有大型软件包时建议调大。
-          </p>
+          <p class="config-item-desc">安装/卸载/升级等 dpkg 操作的超时时间。网络较慢或有大型软件包时建议调大。</p>
           <div class="slider-row">
             <input
               v-model.number="editConfig.software_manager.operation_timeout"
@@ -669,7 +670,8 @@ function setCameraName(index: number, name: string) {
         </div>
 
         <p class="section-desc" style="margin-top: 12px">
-          💡 默认市场源地址为 <code>market.wo-bot.com</code>，实际访问时会自动拼接头部和路径（如 <code>http://market.wo-bot.com:9099/api/manifest</code>）。
+          💡 默认市场源地址为 <code>market.wo-bot.com</code>，实际访问时会自动拼接头部和路径（如
+          <code>http://market.wo-bot.com:9099/api/manifest</code>）。
         </p>
       </div>
     </div>

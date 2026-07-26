@@ -13,7 +13,14 @@ import type {
   Software,
   SoftwareTask,
 } from "../types";
-import { getSignalingWs, setDataChannel, getRemoteFeatures, refreshHeartbeatPongTime, notifyMessageListeners, onChunkedDownload, handleChunkedDownloadMessage } from "./useWebSocket";
+import {
+  getSignalingWs,
+  setDataChannel,
+  getRemoteFeatures,
+  refreshHeartbeatPongTime,
+  notifyMessageListeners,
+  handleChunkedDownloadMessage,
+} from "./useWebSocket";
 
 /* ============================================================
  * wo-bot-web-debug - WebRTC 连接管理
@@ -1051,7 +1058,10 @@ export function useWebRTC() {
       case "camera_stream_quality_changed": {
         const mode = String(data.mode || "high") as "auto" | "high" | "medium" | "low";
         robotStore.setStreamQuality(mode);
-        appStore.showToast(`画质自动切换至 ${mode === "high" ? "高画质" : mode === "medium" ? "中画质" : "低画质"}`, "info");
+        appStore.showToast(
+          `画质自动切换至 ${mode === "high" ? "高画质" : mode === "medium" ? "中画质" : "低画质"}`,
+          "info",
+        );
         break;
       }
       default:

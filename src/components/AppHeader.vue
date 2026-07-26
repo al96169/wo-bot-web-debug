@@ -423,14 +423,14 @@ onUnmounted(() => {
         <!-- 云端用户菜单 -->
         <div v-if="isAuthenticated" class="user-menu-wrapper">
           <button class="user-btn" title="云端账户" @click="toggleUserMenu">
-            <span class="user-avatar">{{ (user?.email || user?.name || '?').charAt(0).toUpperCase() }}</span>
-            <span class="user-email">{{ user?.email || user?.name || '已登录' }}</span>
+            <span class="user-avatar">{{ (user?.email || user?.name || "?").charAt(0).toUpperCase() }}</span>
+            <span class="user-email">{{ user?.email || user?.name || "已登录" }}</span>
           </button>
           <div class="user-menu-dropdown" :class="{ show: userMenuOpen }">
             <div class="user-menu-header">
-              <span class="user-avatar">{{ (user?.email || user?.name || '?').charAt(0).toUpperCase() }}</span>
+              <span class="user-avatar">{{ (user?.email || user?.name || "?").charAt(0).toUpperCase() }}</span>
               <div class="user-menu-info">
-                <div class="user-menu-name">{{ user?.name || user?.sub || '用户' }}</div>
+                <div class="user-menu-name">{{ user?.name || user?.sub || "用户" }}</div>
                 <div class="user-menu-email">{{ user?.email }}</div>
               </div>
             </div>

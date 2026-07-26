@@ -87,9 +87,7 @@ function onDownload() {
   <div class="dialog-overlay" @click.self="emit('close')">
     <div class="dialog gallery-preview-dialog">
       <div class="gallery-preview-header">
-        <span class="preview-title" :title="item.name">
-          {{ isVideo ? "🎬" : "📷" }} {{ item.name }}
-        </span>
+        <span class="preview-title" :title="item.name"> {{ isVideo ? "🎬" : "📷" }} {{ item.name }} </span>
         <div class="preview-actions">
           <button class="btn-secondary" @click="onDownload">⬇️ 下载</button>
           <button class="btn-secondary" @click="emit('close')">关闭</button>

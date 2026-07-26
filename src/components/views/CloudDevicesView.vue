@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useAuth } from "@/composables/useAuth";
-import {
-  getDevices,
-  unbindDevice,
-  renameDevice,
-  type CloudDevice,
-} from "@/services/account";
+import { getDevices, unbindDevice, renameDevice, type CloudDevice } from "@/services/account";
 
 const { isAuthenticated, login } = useAuth();
 

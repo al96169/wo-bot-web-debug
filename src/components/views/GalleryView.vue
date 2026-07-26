@@ -49,11 +49,11 @@ function formatDuration(s?: number): string {
 }
 
 /** 缩略图 data URI */
-function thumbSrc(item: GalleryItem): string | null {
+function thumbSrc(item: GalleryItem): string | undefined {
   if (item.thumbnail_base64) {
     return `data:image/jpeg;base64,${item.thumbnail_base64}`;
   }
-  return null;
+  return undefined;
 }
 
 /** 刷新列表（首页） */
@@ -220,7 +220,9 @@ onUnmounted(() => {
           <button v-if="showBatchActions" class="btn-download" @click="downloadSelected">
             ⬇️ 下载 ({{ selectedNames.size }})
           </button>
-          <button v-if="showBatchActions" class="btn-danger" @click="deleteSelected">🗑️ 删除 ({{ selectedNames.size }})</button>
+          <button v-if="showBatchActions" class="btn-danger" @click="deleteSelected">
+            🗑️ 删除 ({{ selectedNames.size }})
+          </button>
         </div>
         <span class="gallery-count">{{ robotStore.gallery.length }} / {{ robotStore.galleryTotal }} 项</span>
       </div>
@@ -232,8 +234,8 @@ onUnmounted(() => {
           <div class="storage-bar-fill" :style="{ width: storageUsedPercent + '%' }"></div>
         </div>
         <span class="storage-detail">
-          {{ formatSize(storage.used_bytes) }} / {{ formatSize(storage.total_bytes) }}
-          （剩余 {{ formatSize(storage.available_bytes) }}）
+          {{ formatSize(storage.used_bytes) }} / {{ formatSize(storage.total_bytes) }} （剩余
+          {{ formatSize(storage.available_bytes) }}）
         </span>
       </div>
 
@@ -257,10 +259,14 @@ onUnmounted(() => {
             }"
             @click="openPreview(item)"
           >
-            <div class="gallery-checkbox" :class="{ checked: selectedNames.has(item.name) }" @click.stop="toggleSelect(item.name)"></div>
+            <div
+              class="gallery-checkbox"
+              :class="{ checked: selectedNames.has(item.name) }"
+              @click.stop="toggleSelect(item.name)"
+            ></div>
             <div class="gallery-thumb">
               <img v-if="thumbSrc(item)" :src="thumbSrc(item)" alt="thumbnail" />
-              <span v-else>{{ item.type === 'video' ? '🎬' : '📷' }}</span>
+              <span v-else>{{ item.type === "video" ? "🎬" : "📷" }}</span>
               <span v-if="item.type === 'video'" class="thumb-badge">▶</span>
               <span v-if="item.duration_s" class="thumb-duration">{{ formatDuration(item.duration_s) }}</span>
             </div>
@@ -271,7 +277,9 @@ onUnmounted(() => {
                 <span>{{ item.timestamp }}</span>
               </div>
             </div>
-            <button v-if="!multiSelectMode" class="card-delete-btn" @click.stop="deleteSingle(item)" title="删除">✕</button>
+            <button v-if="!multiSelectMode" class="card-delete-btn" @click.stop="deleteSingle(item)" title="删除">
+              ✕
+            </button>
           </div>
         </div>
 
@@ -284,16 +292,20 @@ onUnmounted(() => {
             :class="{ selected: selectedNames.has(item.name), 'show-checkbox': multiSelectMode }"
             @click="openPreview(item)"
           >
-            <div class="gallery-checkbox" :class="{ checked: selectedNames.has(item.name) }" @click.stop="toggleSelect(item.name)"></div>
+            <div
+              class="gallery-checkbox"
+              :class="{ checked: selectedNames.has(item.name) }"
+              @click.stop="toggleSelect(item.name)"
+            ></div>
             <div class="list-thumb">
               <img v-if="thumbSrc(item)" :src="thumbSrc(item)" alt="thumbnail" />
-              <span v-else>{{ item.type === 'video' ? '🎬' : '📷' }}</span>
+              <span v-else>{{ item.type === "video" ? "🎬" : "📷" }}</span>
               <span v-if="item.type === 'video'" class="thumb-badge">▶</span>
             </div>
             <div class="list-info">
               <div class="list-name" :title="item.name">{{ item.name }}</div>
               <div class="list-meta">
-                <span>{{ item.type === 'video' ? '视频' : '照片' }}</span>
+                <span>{{ item.type === "video" ? "视频" : "照片" }}</span>
                 <span v-if="item.camera_id !== undefined">摄像头 {{ item.camera_id }}</span>
                 <span>{{ formatSize(item.file_size) }}</span>
                 <span v-if="item.duration_s">{{ formatDuration(item.duration_s) }}</span>
@@ -309,17 +321,14 @@ onUnmounted(() => {
 
         <!-- 加载更多提示 -->
         <div v-if="robotStore.galleryLoading" class="load-more-tip">加载中...</div>
-        <div v-else-if="!robotStore.galleryHasMore && robotStore.gallery.length > 0" class="load-more-tip">没有更多了</div>
+        <div v-else-if="!robotStore.galleryHasMore && robotStore.gallery.length > 0" class="load-more-tip">
+          没有更多了
+        </div>
       </div>
     </div>
 
     <!-- 预览对话框 -->
-    <GalleryPreviewDialog
-      v-if="previewItem"
-      :item="previewItem"
-      @close="closePreview"
-      @download="onPreviewDownload"
-    />
+    <GalleryPreviewDialog v-if="previewItem" :item="previewItem" @close="closePreview" @download="onPreviewDownload" />
   </div>
 </template>
 

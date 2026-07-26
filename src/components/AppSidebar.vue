@@ -6,7 +6,6 @@ import { useDiscovery } from "@/composables/useDiscovery";
 import { useAuth } from "@/composables/useAuth";
 import { useWebSocket, connectionMode, getStoredBinding } from "@/composables/useWebSocket";
 import type { Device } from "@/types";
-import type { CloudDevice } from "@/services/account";
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
@@ -87,11 +86,6 @@ function handleAddDevice() {
 /** 云端设备（已去重） */
 const cloudDevices = computed(() => devicesStore.cloudDevicesFiltered);
 
-/** 刷新云端设备列表 */
-async function handleRefreshCloud() {
-  await devicesStore.loadCloudDevices();
-}
-
 /** 点击云端设备：按 robotId 匹配本地/发现设备，必要时自动扫描 */
 async function handleCloudDeviceClick(device: { robotId: string; robotName: string | null }) {
   if (connectingCloud.value) return;
@@ -100,9 +94,7 @@ async function handleCloudDeviceClick(device: { robotId: string; robotName: stri
 
   try {
     // 1. 先在本地已保存设备中查找（robotId 或 id 匹配）
-    const localMatch = devicesStore.devices.find(
-      (d) => d.robotId === device.robotId || d.id === device.robotId,
-    );
+    const localMatch = devicesStore.devices.find((d) => d.robotId === device.robotId || d.id === device.robotId);
     if (localMatch) {
       // 验证本地可达性：mDNS 发现列表中有此设备才算本地在线
       const isLocallyReachable = devicesStore.discovered.some(
@@ -131,9 +123,7 @@ async function handleCloudDeviceClick(device: { robotId: string; robotName: stri
     // 2. 在已发现设备中查找（按 robotId 或名称匹配）
     const findInDiscovered = () =>
       devicesStore.discovered.find(
-        (d) =>
-          d.robotId === device.robotId ||
-          (d.name === device.robotName && device.robotName),
+        (d) => d.robotId === device.robotId || (d.name === device.robotName && device.robotName),
       );
 
     let discoveredMatch = findInDiscovered();
@@ -177,10 +167,7 @@ async function handleCloudDeviceClick(device: { robotId: string; robotName: stri
       return;
     }
 
-    appStore.showToast(
-      `设备「${targetName}」未在本地网络中发现，请确认设备已开机并连接到同一局域网`,
-      "error",
-    );
+    appStore.showToast(`设备「${targetName}」未在本地网络中发现，请确认设备已开机并连接到同一局域网`, "error");
   } finally {
     connectingCloud.value = false;
   }
@@ -253,7 +240,10 @@ function onStorageBinding(e: StorageEvent): void {
 }
 onMounted(() => window.addEventListener("storage", onStorageBinding));
 onUnmounted(() => window.removeEventListener("storage", onStorageBinding));
-watch(() => appStore.connection, () => refreshBindings());
+watch(
+  () => appStore.connection,
+  () => refreshBindings(),
+);
 
 /** 1. 是否已绑定到当前登录用户（cloudDevices 中存在此 robotId） */
 function isDeviceBoundToUser(device: Device): boolean {
@@ -281,10 +271,9 @@ function getOnlineStatusTag(device: Device): DeviceTag {
   // 本地在线：mDNS 发现列表中有此设备，或设备有有效 ip:port（已保存设备可能 mDNS 未发现但仍可达）
   const isLocalOnline =
     devicesStore.discovered.some(
-      (d) =>
-        d.robotId === device.robotId ||
-        `${d.ip}:${d.port}` === `${device.ip}:${device.port}`,
-    ) || (device.ip && device.port > 0);
+      (d) => d.robotId === device.robotId || `${d.ip}:${d.port}` === `${device.ip}:${device.port}`,
+    ) ||
+    (device.ip && device.port > 0);
   if (isLocalOnline) {
     return { key: "local", text: "本地在线", variant: "local" };
   }
@@ -309,32 +298,6 @@ function getDeviceTags(device: Device): DeviceTag[] {
   if (isDeviceSaved(device)) tags.push({ key: "saved", text: "已保存", variant: "saved" });
   tags.push(getOnlineStatusTag(device));
   if (isDeviceConnected(device)) tags.push({ key: "connected", text: "已连接", variant: "connected" });
-  return tags;
-}
-
-/** 云端设备卡片 tag 列表 */
-function getCloudDeviceTags(device: CloudDevice): DeviceTag[] {
-  const tags: DeviceTag[] = [];
-  // 云端设备本身就是当前帐号绑定的
-  tags.push({ key: "bound", text: "已绑定", variant: "bound" });
-  // 是否已保存到已连接记录
-  void bindingsVersion.value;
-  if (getStoredBinding(device.robotId)) {
-    tags.push({ key: "saved", text: "已保存", variant: "saved" });
-  }
-  // 在线状态
-  if (device.status === "online") {
-    tags.push({ key: "cloud", text: "云端在线", variant: "cloud" });
-  } else {
-    tags.push({ key: "offline", text: "离线", variant: "offline" });
-  }
-  // 已连接：当前设备 robotId 匹配且已连接
-  const cd = devicesStore.currentDevice;
-  const isConnected =
-    !!cd &&
-    (cd.robotId === device.robotId || cd.id === device.robotId) &&
-    appStore.connection === "connected";
-  if (isConnected) tags.push({ key: "connected", text: "已连接", variant: "connected" });
   return tags;
 }
 </script>
@@ -371,11 +334,7 @@ function getCloudDeviceTags(device: CloudDevice): DeviceTag[] {
               >
             </div>
           </div>
-          <div
-            v-if="mergedDevices.length === 0"
-            class="empty-state"
-            style="padding: 16px; font-size: 12px"
-          >
+          <div v-if="mergedDevices.length === 0" class="empty-state" style="padding: 16px; font-size: 12px">
             暂无设备，请扫描发现设备
           </div>
         </div>

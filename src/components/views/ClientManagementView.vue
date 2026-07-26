@@ -288,9 +288,7 @@ onUnmounted(() => {
       <div v-else class="cloud-bind-action">
         <p class="cloud-bind-hint">
           {{
-            isAuthenticated
-              ? "将当前设备绑定到你的用户帐号，绑定后可远程管理设备"
-              : "需要先登录用户帐号才能绑定设备"
+            isAuthenticated ? "将当前设备绑定到你的用户帐号，绑定后可远程管理设备" : "需要先登录用户帐号才能绑定设备"
           }}
         </p>
         <button

@@ -134,9 +134,7 @@ export const useDevicesStore = defineStore("devices", {
             }
           }
           // 过滤掉无效设备（ip 为空且 port 为 0，无法本地连接也无法云端连接）
-          this.devices = Array.from(seen.values()).filter(
-            (d) => (d.ip && d.port > 0) || d.robotId,
-          );
+          this.devices = Array.from(seen.values()).filter((d) => (d.ip && d.port > 0) || d.robotId);
         }
         // 不恢复 currentDevice：连接是运行时状态，刷新页面后必定断开
       } catch {

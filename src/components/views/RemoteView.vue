@@ -57,8 +57,7 @@ const recordFileSize = computed(() => robotStore.cameraRecord.file_size_bytes);
 const mainCameraRecording = computed(
   () =>
     isRecording.value &&
-    (robotStore.cameraRecord.camera_id === null ||
-      robotStore.cameraRecord.camera_id === mainCameraId.value),
+    (robotStore.cameraRecord.camera_id === null || robotStore.cameraRecord.camera_id === mainCameraId.value),
 );
 
 /** 格式化录制时长 mm:ss */
@@ -1021,10 +1020,7 @@ onDeactivated(() => {
         <div class="camera-dual">
           <!-- 左摄像头 -->
           <div class="camera-dual-item">
-            <div
-              class="camera-dual-container"
-              :class="{ disabled: !cameraLeftOn, recording: mainCameraRecording }"
-            >
+            <div class="camera-dual-container" :class="{ disabled: !cameraLeftOn, recording: mainCameraRecording }">
               <video ref="videoLeftRef" class="camera-feed" autoplay muted playsinline width="640" height="480"></video>
               <div class="video-debug">{{ videoDebug0 || "等待流..." }}</div>
               <div v-if="!cameraLeftOn" class="camera-placeholder">
@@ -1126,7 +1122,12 @@ onDeactivated(() => {
             <button v-if="gimbalAvailable" class="action-btn center" @click="sendGimbalCenter()">🎯 回中</button>
             <button class="action-btn danger" @click="handleAction('emergency')">🛑 急停</button>
             <button class="action-btn center" @click="handleAction('emergency_release')">✅ 释放</button>
-            <button v-if="cameraCaptureAvailable" class="action-btn capture" @click="handleCapture" title="拍照（所有已注册摄像头）">
+            <button
+              v-if="cameraCaptureAvailable"
+              class="action-btn capture"
+              @click="handleCapture"
+              title="拍照（所有已注册摄像头）"
+            >
               📷 拍照
             </button>
             <button
@@ -1415,8 +1416,13 @@ select.action-btn.quality-select option {
   color: var(--text-primary);
 }
 @keyframes record-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 .record-status-row {
   display: flex;
@@ -1437,21 +1443,33 @@ select.action-btn.quality-select option {
   animation: record-blink 1s ease-in-out infinite;
 }
 @keyframes record-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.2; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
 }
 /* 主摄录制时红色边框 */
 .camera-dual-container.recording {
   border: 2px solid var(--danger);
-  box-shadow: 0 0 0 2px rgba(255, 60, 60, 0.3), 0 0 12px rgba(255, 60, 60, 0.4);
+  box-shadow:
+    0 0 0 2px rgba(255, 60, 60, 0.3),
+    0 0 12px rgba(255, 60, 60, 0.4);
   animation: recording-border 1.5s ease-in-out infinite;
 }
 @keyframes recording-border {
-  0%, 100% {
-    box-shadow: 0 0 0 2px rgba(255, 60, 60, 0.3), 0 0 12px rgba(255, 60, 60, 0.4);
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(255, 60, 60, 0.3),
+      0 0 12px rgba(255, 60, 60, 0.4);
   }
   50% {
-    box-shadow: 0 0 0 2px rgba(255, 60, 60, 0.6), 0 0 18px rgba(255, 60, 60, 0.6);
+    box-shadow:
+      0 0 0 2px rgba(255, 60, 60, 0.6),
+      0 0 18px rgba(255, 60, 60, 0.6);
   }
 }
 .joystick-container {

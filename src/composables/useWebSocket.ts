@@ -474,21 +474,6 @@ function _send(frame: WsMsg, forceWs = false): void {
   }
 }
 
-/** 通过浏览器原生方法触发文件下载（给定 URL） */
-function triggerBrowserDownload(url: string, fileName: string): void {
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.rel = "noopener";
-  // 对于跨域 URL，target 设为 _blank 可避免被拦截
-  if (!url.startsWith(window.location.origin)) {
-    link.target = "_blank";
-  }
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
-
 /** 通过 base64 数据触发文件下载 */
 function triggerBase64Download(base64: string, fileName: string, mime: string): void {
   const link = document.createElement("a");
@@ -950,7 +935,7 @@ export function useWebSocket() {
       };
 
       // ICE fallback：5 秒内 ICE 状态未变为 connected/completed，尝试触发重连
-      const iceFallbackTimer = setTimeout(() => {
+      void setTimeout(() => {
         if (peerConnection !== _signalPc) return;
         const iceState = peerConnection.iceConnectionState;
         if (iceState !== "connected" && iceState !== "completed" && iceState !== "failed") {
@@ -970,7 +955,7 @@ export function useWebSocket() {
         if (!_signalMediaReceived) {
           console.warn("[WS-Signal] 媒体超时: 8 秒内未收到视频数据");
           webrtc.webrtcState.value = "failed";
-          appStore.showToast("视频流未到达，请检查网络", "warn");
+          appStore.showToast("视频流未到达，请检查网络", "error");
         }
       }, 8000);
 
@@ -1061,14 +1046,17 @@ export function useWebSocket() {
             console.warn("[WS-Signal] answer 丢弃, signalingState:", _signalPc.signalingState);
             return;
           }
-          _signalPc.setRemoteDescription(answerDesc).then(() => {
-            console.log("[WS-Signal] setRemoteDescription OK, sdp length:", answerDesc.sdp?.length);
-            // 更新 signalingState 供调试面板显示
-            const webrtc = useWebRTC();
-            webrtc.signalingState.value = _signalPc!.signalingState;
-          }).catch((e: unknown) => {
-            console.error("[WS-Signal] setRemoteDescription 失败:", e);
-          });
+          _signalPc
+            .setRemoteDescription(answerDesc)
+            .then(() => {
+              console.log("[WS-Signal] setRemoteDescription OK, sdp length:", answerDesc.sdp?.length);
+              // 更新 signalingState 供调试面板显示
+              const webrtc = useWebRTC();
+              webrtc.signalingState.value = _signalPc!.signalingState;
+            })
+            .catch((e: unknown) => {
+              console.error("[WS-Signal] setRemoteDescription 失败:", e);
+            });
         } catch (e) {
           console.error("[WS-Signal] setRemoteDescription 失败:", e);
         }
@@ -1158,12 +1146,7 @@ export function useWebSocket() {
       return;
     }
     _signalReconnectCount++;
-    console.log(
-      "[WS-Signal] maybeReconnectSignal() 安排重连:",
-      _signalReconnectCount,
-      "/",
-      maxRetries,
-    );
+    console.log("[WS-Signal] maybeReconnectSignal() 安排重连:", _signalReconnectCount, "/", maxRetries);
     _reconnectTimer = setTimeout(() => connectViaSignal(robotId), RECONNECT_DELAY * _signalReconnectCount);
   }
 
@@ -2052,7 +2035,10 @@ export function useWebSocket() {
       case "camera_stream_quality_changed": {
         const mode = String(data.mode || "high") as "auto" | "high" | "medium" | "low";
         robotStore.setStreamQuality(mode);
-        appStore.showToast(`画质自动切换至 ${mode === "high" ? "高画质" : mode === "medium" ? "中画质" : "低画质"}`, "info");
+        appStore.showToast(
+          `画质自动切换至 ${mode === "high" ? "高画质" : mode === "medium" ? "中画质" : "低画质"}`,
+          "info",
+        );
         break;
       }
     }
