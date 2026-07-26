@@ -1125,8 +1125,8 @@ onDeactivated(() => {
             <button
               v-if="cameraCaptureAvailable"
               class="action-btn capture"
-              @click="handleCapture"
               title="拍照（所有已注册摄像头）"
+              @click="handleCapture"
             >
               📷 拍照
             </button>
@@ -1134,16 +1134,16 @@ onDeactivated(() => {
               v-if="cameraCaptureAvailable"
               class="action-btn record"
               :class="{ recording: isRecording }"
-              @click="handleRecordToggle"
               :title="isRecording ? '停止录像' : '开始录像（主摄）'"
+              @click="handleRecordToggle"
             >
               {{ isRecording ? "⏹ 停止" : "⏺ 录像" }}
             </button>
             <select
               class="action-btn quality-select"
               :value="robotStore.streamQuality"
-              @change="handleQualityChange(($event.target as HTMLSelectElement).value as any)"
               title="摄像头直播画质"
+              @change="handleQualityChange(($event.target as HTMLSelectElement).value as any)"
             >
               <option v-for="opt in qualityOptions" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
