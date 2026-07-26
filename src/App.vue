@@ -53,9 +53,7 @@ const robotStore = useRobotStore();
 const route = useRoute();
 
 // 判断当前是否为路由页面（auth/callback, cloud/*）
-const isRoutePage = computed(() =>
-  route.path.startsWith("/auth/") || route.path.startsWith("/cloud/")
-);
+const isRoutePage = computed(() => route.path.startsWith("/auth/") || route.path.startsWith("/cloud/"));
 const { connect, disconnect, sendSystemAction, connectViaSignal } = useWebSocket();
 const { establishConnection: establishWebRTC, close: closeWebRTC, webrtcState } = useWebRTC();
 const { startMockMode, stopMockMode } = useMock();
@@ -432,7 +430,10 @@ function handleDisconnect() {
 
 function handleOpsConfirm() {
   if (!opsConfirm.value) return;
-  const type = opsConfirm.value.type;
+  // 防止快速双击导致重复发送
+  const action = opsConfirm.value;
+  opsConfirm.value = null;
+  const type = action.type;
   if (type === "forget" && devicesStore.currentDevice) {
     devicesStore.removeDevice(devicesStore.currentDevice.id);
     devicesStore.setCurrentDevice(null);
@@ -468,7 +469,6 @@ function handleOpsConfirm() {
     sendSystemAction("restart_service");
     disconnect();
   }
-  opsConfirm.value = null;
 }
 
 function handleOpsCancel() {

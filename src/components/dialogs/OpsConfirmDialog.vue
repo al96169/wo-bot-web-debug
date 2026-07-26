@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { ref } from "vue";
+
 const props = defineProps<{
   title: string;
   message: string;
@@ -9,6 +10,14 @@ const emit = defineEmits<{
   close: [];
   confirm: [];
 }>();
+
+const confirming = ref(false);
+
+function handleConfirm() {
+  if (confirming.value) return;
+  confirming.value = true;
+  emit("confirm");
+}
 </script>
 
 <template>
@@ -17,8 +26,10 @@ const emit = defineEmits<{
       <h3>{{ title }}</h3>
       <p style="margin-bottom: 16px; color: var(--text-secondary)">{{ message }}</p>
       <div class="dialog-actions">
-        <button class="btn-secondary" @click="emit('close')">取消</button>
-        <button class="btn-primary" style="background: var(--danger)" @click="emit('confirm')">确认</button>
+        <button class="btn-secondary" :disabled="confirming" @click="emit('close')">取消</button>
+        <button class="btn-primary" style="background: var(--danger)" :disabled="confirming" @click="handleConfirm">
+          {{ confirming ? "执行中..." : "确认" }}
+        </button>
       </div>
     </div>
   </div>
@@ -73,5 +84,10 @@ const emit = defineEmits<{
 }
 .btn-primary:hover {
   opacity: 0.9;
+}
+.btn-secondary:disabled,
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
