@@ -597,8 +597,8 @@ function setCameraName(index: number, name: string) {
             />
             <button
               class="btn-reset-endpoint"
-              @click="editConfig.software_manager.market_endpoint = 'market.wo-bot.com'"
               :disabled="editConfig.software_manager.market_endpoint === 'market.wo-bot.com'"
+              @click="editConfig.software_manager.market_endpoint = 'market.wo-bot.com'"
             >
               ↩ 重置为默认值
             </button>

@@ -196,7 +196,7 @@ onUnmounted(() => {
       <!-- 工具栏 -->
       <div class="gallery-toolbar">
         <div class="toolbar-group">
-          <button @click="refreshList" :disabled="robotStore.galleryLoading">
+          <button :disabled="robotStore.galleryLoading" @click="refreshList">
             {{ robotStore.galleryLoading ? "加载中..." : "🔄 刷新" }}
           </button>
           <!-- 类型筛选 -->
@@ -209,8 +209,8 @@ onUnmounted(() => {
         <div class="toolbar-group">
           <!-- 布局切换 -->
           <div class="layout-toggle">
-            <button :class="{ active: layoutMode === 'grid' }" @click="layoutMode = 'grid'" title="网格布局">▦</button>
-            <button :class="{ active: layoutMode === 'list' }" @click="layoutMode = 'list'" title="列表布局">☰</button>
+            <button :class="{ active: layoutMode === 'grid' }" title="网格布局" @click="layoutMode = 'grid'">▦</button>
+            <button :class="{ active: layoutMode === 'list' }" title="列表布局" @click="layoutMode = 'list'">☰</button>
           </div>
           <button :class="{ active: multiSelectMode }" @click="toggleMultiSelect">☑️ 多选</button>
           <template v-if="multiSelectMode">
@@ -277,7 +277,7 @@ onUnmounted(() => {
                 <span>{{ item.timestamp }}</span>
               </div>
             </div>
-            <button v-if="!multiSelectMode" class="card-delete-btn" @click.stop="deleteSingle(item)" title="删除">
+            <button v-if="!multiSelectMode" class="card-delete-btn" title="删除" @click.stop="deleteSingle(item)">
               ✕
             </button>
           </div>
@@ -312,9 +312,9 @@ onUnmounted(() => {
                 <span>{{ item.timestamp }}</span>
               </div>
             </div>
-            <div class="list-actions" v-if="!multiSelectMode">
-              <button class="list-action-btn" @click.stop="downloadFile(item.name)" title="下载">⬇️</button>
-              <button class="list-action-btn danger" @click.stop="deleteSingle(item)" title="删除">🗑️</button>
+            <div v-if="!multiSelectMode" class="list-actions">
+              <button class="list-action-btn" title="下载" @click.stop="downloadFile(item.name)">⬇️</button>
+              <button class="list-action-btn danger" title="删除" @click.stop="deleteSingle(item)">🗑️</button>
             </div>
           </div>
         </div>

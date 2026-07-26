@@ -27,7 +27,7 @@ function dismiss() {
       </template>
     </div>
     <button class="update-banner-action" @click="goToSoftware">去升级</button>
-    <button class="update-banner-close" @click="dismiss" title="关闭">×</button>
+    <button class="update-banner-close" title="关闭" @click="dismiss">×</button>
   </div>
 </template>
 
