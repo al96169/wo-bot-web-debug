@@ -20,6 +20,7 @@ const tabs = [
   { id: "camera", label: "📷 摄像头" },
   { id: "network", label: "🌐 网络" },
   { id: "power", label: "🔋 省电配置" },
+  { id: "software", label: "📦 软件管理" },
   { id: "json_editor", label: "{ } JSON编辑器" },
   { id: "debug", label: "🧪 调试面板" },
   { id: "clients", label: "🔗 绑定配置" },
@@ -575,6 +576,101 @@ function setCameraName(index: number, name: string) {
           </p>
         </div>
         <p class="section-desc" style="margin-top: 12px">💡 修改阀值后，点击底部「应用配置」按钮即可保存。</p>
+      </div>
+    </div>
+
+    <!-- ==================== 软件管理 ==================== -->
+    <div v-show="activeTab === 'software'" class="config-panel">
+      <div class="config-section">
+        <h3>📦 软件管理配置</h3>
+
+        <div class="config-item">
+          <div class="config-item-header"><label>市场源地址</label></div>
+          <p class="config-item-desc">
+            设置软件包市场源的 URL 地址（不含末尾斜杠）。修改后需重启 software_manager 子进程或整个服务才能生效。
+          </p>
+          <div class="endpoint-row">
+            <input
+              v-model="editConfig.software_manager.market_endpoint"
+              class="config-input endpoint-input"
+              placeholder="http://market.wo-bot.com:9099"
+            />
+            <button
+              class="btn-reset-endpoint"
+              @click="editConfig.software_manager.market_endpoint = 'market.wo-bot.com'"
+              :disabled="editConfig.software_manager.market_endpoint === 'market.wo-bot.com'"
+            >
+              ↩ 重置为默认值
+            </button>
+          </div>
+          <p v-if="editConfig.software_manager.market_endpoint === 'market.wo-bot.com'" class="default-hint">
+            ✓ 当前使用默认市场源
+          </p>
+          <p
+            v-if="editConfig.software_manager.market_endpoint !== (robotStore.robotConfig?.software_manager?.market_endpoint ?? 'market.wo-bot.com')"
+            class="reboot-warning"
+          >
+            ⚠️ 修改市场源地址需要重启 software_manager 子进程才能生效（应用配置后自动重启）
+          </p>
+        </div>
+
+        <div class="config-item">
+          <div class="config-item-header">
+            <label>白名单缓存时长</label>
+            <span class="config-item-value">{{ editConfig.software_manager.manifest_cache_ttl }} 秒</span>
+          </div>
+          <p class="config-item-desc">
+            Manifest 白名单的本地缓存时长。设置过小会频繁向市场服务器请求，设置过大可能导致无法及时发现可用更新。
+          </p>
+          <div class="slider-row">
+            <input
+              v-model.number="editConfig.software_manager.manifest_cache_ttl"
+              type="range"
+              min="60"
+              max="3600"
+              step="60"
+            />
+            <input
+              v-model.number="editConfig.software_manager.manifest_cache_ttl"
+              type="number"
+              min="60"
+              max="3600"
+              step="60"
+              class="num-input"
+            />
+          </div>
+        </div>
+
+        <div class="config-item">
+          <div class="config-item-header">
+            <label>操作超时时间</label>
+            <span class="config-item-value">{{ editConfig.software_manager.operation_timeout }} 秒</span>
+          </div>
+          <p class="config-item-desc">
+            安装/卸载/升级等 dpkg 操作的超时时间。网络较慢或有大型软件包时建议调大。
+          </p>
+          <div class="slider-row">
+            <input
+              v-model.number="editConfig.software_manager.operation_timeout"
+              type="range"
+              min="30"
+              max="600"
+              step="30"
+            />
+            <input
+              v-model.number="editConfig.software_manager.operation_timeout"
+              type="number"
+              min="30"
+              max="600"
+              step="30"
+              class="num-input"
+            />
+          </div>
+        </div>
+
+        <p class="section-desc" style="margin-top: 12px">
+          💡 默认市场源地址为 <code>market.wo-bot.com</code>，实际访问时会自动拼接头部和路径（如 <code>http://market.wo-bot.com:9099/api/manifest</code>）。
+        </p>
       </div>
     </div>
 
@@ -1142,5 +1238,39 @@ h2 {
   margin-top: 10px;
   font-size: 12px;
   color: #ffc107;
+}
+
+.endpoint-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+.endpoint-input {
+  flex: 1;
+}
+.btn-reset-endpoint {
+  padding: 8px 16px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.btn-reset-endpoint:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn-reset-endpoint:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.default-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--success);
 }
 </style>

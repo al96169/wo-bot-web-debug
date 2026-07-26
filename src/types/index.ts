@@ -473,5 +473,10 @@ export interface RobotConfig {
     methods: Record<string, boolean>;
   };
   power_policy: { threshold: number };
+  software_manager: {
+    market_endpoint: string;
+    manifest_cache_ttl: number;
+    operation_timeout: number;
+  };
   [key: string]: unknown;
 }

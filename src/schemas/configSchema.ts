@@ -80,6 +80,11 @@ export const DEFAULT_CONFIG: RobotConfig = {
   power_policy: {
     threshold: 30,
   },
+  software_manager: {
+    market_endpoint: "market.wo-bot.com",
+    manifest_cache_ttl: 300,
+    operation_timeout: 120,
+  },
 };
 
 /** 核心功能（不可关闭，开关置灰） */
