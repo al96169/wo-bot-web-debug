@@ -1409,6 +1409,7 @@ export function useWebSocket() {
         const batt = (data.battery ?? {}) as Record<string, unknown>;
         const sys = (data.system ?? {}) as Record<string, unknown>;
         const net = (data.network ?? {}) as Record<string, unknown>;
+        const env = (data.environment ?? {}) as Record<string, unknown>;
         robotStore.setSystemStatus({
           battery: {
             level: Number(batt.level ?? 0),
@@ -1426,7 +1427,12 @@ export function useWebSocket() {
             ip: String(net.ip ?? "--"),
           },
           cellular: { signal: "--", carrier: "--" },
-          environment: { temperature: "--", humidity: "--", gas: "--", light: "--" },
+          environment: {
+            temperature: env.temperature != null ? `${Number(env.temperature).toFixed(1)}` : "--",
+            humidity: env.humidity != null ? `${Number(env.humidity).toFixed(1)}` : "--",
+            gas: String(env.gas ?? "--"),
+            light: env.light != null ? `${Number(env.light)}` : "--",
+          },
           uptime: Number(sys.uptime ?? 0),
           hostname: String(sys.hostname ?? "--"),
         });
