@@ -10,8 +10,7 @@ const showWifiManager = ref(false);
 
 // 外设槽位中文名映射
 const PERIPHERAL_LABELS: Record<string, string> = {
-  ambient_temperature: "温度传感器",
-  ambient_humidity: "湿度传感器",
+  dht11: "温湿度传感器",
   gas: "燃气传感器",
   light: "光照传感器",
   co2: "CO2 传感器",
