@@ -1435,7 +1435,8 @@ export function useWebSocket() {
           },
           uptime: Number(sys.uptime ?? 0),
           hostname: String(sys.hostname ?? "--"),
-        });
+          peripherals: (data.peripherals ?? {}) as Record<string, unknown>,
+        } as Parameters<typeof robotStore.setSystemStatus>[0]);
         // 从 status 中同步 features（确保平板等客户端也能获取最新功能列表）
         if (Array.isArray(data.features) && data.features.length > 0) {
           _remoteFeatures.value = data.features as string[];

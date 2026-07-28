@@ -168,6 +168,13 @@ export interface SubsystemStatus {
   icon: string;
 }
 
+export interface PeripheralInfo {
+  state: "online" | "offline" | "unconfigured";
+  provider: string;
+  unit: string;
+  category: string;
+}
+
 export interface SystemStatus {
   battery: { level: number; state: string; temp: number };
   cpu: { usage: number; temp: number };
@@ -183,6 +190,7 @@ export interface SystemStatus {
     gas: string;
     light: number;
   };
+  peripherals?: Record<string, PeripheralInfo>;
 }
 
 /* ---- 联合类型 / 字面量类型 ---- */

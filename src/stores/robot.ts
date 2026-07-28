@@ -158,6 +158,7 @@ export const useRobotStore = defineStore("robot", {
       environment: { temperature: "--" as string, humidity: "--" as string, gas: "--", light: "--" },
       uptime: 0,
       hostname: "--",
+      peripherals: {} as Record<string, import("../types").PeripheralInfo>,
     } as {
       battery: { level: number; status: string; state: string; temp: number; estimatedMinutes: number | null };
       cpu: { usage: number; temp: number };
@@ -168,6 +169,7 @@ export const useRobotStore = defineStore("robot", {
       environment: { temperature: string; humidity: string; gas: string; light: string };
       uptime: number;
       hostname: string;
+      peripherals: Record<string, import("../types").PeripheralInfo>;
     },
 
     /** 摄像头列表 */

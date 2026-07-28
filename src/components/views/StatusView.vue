@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useRobotStore } from "@/stores/robot";
 import WiFiManager from "@/components/dialogs/WiFiManager.vue";
 
@@ -7,6 +7,43 @@ const robotStore = useRobotStore();
 
 const copiedLabel = ref<string | null>(null);
 const showWifiManager = ref(false);
+
+// 外设槽位中文名映射
+const PERIPHERAL_LABELS: Record<string, string> = {
+  ambient_temperature: "温度传感器",
+  ambient_humidity: "湿度传感器",
+  gas: "燃气传感器",
+  light: "光照传感器",
+  co2: "CO2 传感器",
+  pm25: "PM2.5 传感器",
+  ir_transceiver: "红外收发",
+  battery_voltage: "电池电压",
+};
+
+const STATE_LABELS: Record<string, string> = {
+  online: "在线",
+  offline: "离线",
+  unconfigured: "未配置",
+};
+
+// 按类别分组的外设列表
+const peripheralGroups = computed(() => {
+  const peripherals = robotStore.systemStatus.peripherals;
+  if (!peripherals) return [];
+  const groups: Record<string, { name: string; items: { slot: string; info: typeof peripherals[string] }[] }> = {};
+  for (const [slot, info] of Object.entries(peripherals)) {
+    const cat = info.category || "other";
+    if (!groups[cat]) groups[cat] = { name: catLabels[cat] || cat, items: [] };
+    groups[cat].items.push({ slot, info });
+  }
+  return Object.values(groups);
+});
+
+const catLabels: Record<string, string> = {
+  environment: "环境传感器",
+  smart_home: "智能家居",
+  power: "电源",
+};
 
 function copyValue(value: string, label: string) {
   navigator.clipboard
@@ -133,6 +170,29 @@ function copyValue(value: string, label: string) {
             <span class="env-value">{{ robotStore.systemStatus.environment.light }} lux</span>
           </div>
         </div>
+      </div>
+
+      <!-- 外设状态 -->
+      <div class="status-section">
+        <h3>外设状态</h3>
+        <template v-if="peripheralGroups.length > 0">
+          <div v-for="group in peripheralGroups" :key="group.name" class="peripheral-group">
+            <h4 class="peripheral-group-title">{{ group.name }}</h4>
+            <div class="peripheral-grid">
+              <div
+                v-for="item in group.items"
+                :key="item.slot"
+                class="peripheral-item"
+                :class="'peripheral-' + item.info.state"
+              >
+                <span class="peripheral-dot" :class="item.info.state"></span>
+                <span class="peripheral-label">{{ PERIPHERAL_LABELS[item.slot] || item.slot }}</span>
+                <span class="peripheral-state">{{ STATE_LABELS[item.info.state] || item.info.state }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
+        <p v-else class="peripheral-empty">暂无外设数据</p>
       </div>
 
       <!-- 子系统状态 -->
@@ -323,5 +383,78 @@ h2 {
 .wifi-clickable:hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* ---- 外设状态 ---- */
+.peripheral-group {
+  margin-bottom: 16px;
+}
+.peripheral-group:last-child {
+  margin-bottom: 0;
+}
+.peripheral-group-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+.peripheral-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.peripheral-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+.peripheral-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.peripheral-dot.online {
+  background: var(--success, #00cc66);
+  box-shadow: 0 0 4px var(--success, #00cc66);
+}
+.peripheral-dot.offline {
+  background: var(--danger, #ff4757);
+  box-shadow: 0 0 4px var(--danger, #ff4757);
+}
+.peripheral-dot.unconfigured {
+  background: var(--text-muted, #999);
+}
+.peripheral-label {
+  flex: 1;
+  color: var(--text-primary);
+}
+.peripheral-state {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+.peripheral-online .peripheral-state {
+  background: rgba(0, 204, 102, 0.15);
+  color: var(--success, #00cc66);
+}
+.peripheral-offline .peripheral-state {
+  background: rgba(255, 71, 87, 0.15);
+  color: var(--danger, #ff4757);
+}
+.peripheral-unconfigured .peripheral-state {
+  background: rgba(153, 153, 153, 0.15);
+  color: var(--text-muted, #999);
+}
+.peripheral-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 12px 0;
 }
 </style>
