@@ -76,6 +76,7 @@ const ALL_NAV_ITEMS = [
   { view: "gallery", label: "🖼️ 图库", feature: null },
   { view: "music", label: "🎵 音乐", feature: "music" },
   { view: "config", label: "⚙️ 配置", feature: null },
+  { view: "sensorChart", label: "📈 传感器", feature: null },
 ] as const;
 
 /** 根据机器人 features 动态计算可见导航项 */

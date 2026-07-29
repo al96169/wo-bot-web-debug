@@ -37,6 +37,7 @@ import SettingsView from "@/components/views/SettingsView.vue";
 import ProcessManagerView from "@/components/views/ProcessManagerView.vue";
 import MusicView from "@/components/views/MusicView.vue";
 import ConfigView from "@/components/views/ConfigView.vue";
+import SensorChartView from "@/components/views/SensorChartView.vue";
 import BindView from "@/components/views/BindView.vue";
 import type { Device, ViewName, AuthRequiredData } from "@/types";
 import AddDeviceDialog from "@/components/dialogs/AddDeviceDialog.vue";
@@ -507,6 +508,7 @@ const viewsMap: Record<ViewName, unknown> = {
   processManager: ProcessManagerView,
   music: MusicView,
   config: ConfigView,
+  sensorChart: SensorChartView,
 };
 </script>
 

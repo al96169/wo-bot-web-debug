@@ -226,6 +226,11 @@ export const useRobotStore = defineStore("robot", {
     robotConfig: null as RobotConfig | null,
     /** 配置是否已加载 */
     configLoaded: false as boolean,
+    /** 传感器历史数据 (R00045) */
+    sensorHistory: null as {
+      data: Record<string, Array<Record<string, number>>>;
+      slots_metadata: Record<string, { unit: string }>;
+    } | null,
   }),
 
   getters: {
@@ -603,6 +608,12 @@ export const useRobotStore = defineStore("robot", {
     setRobotConfig(config: RobotConfig): void {
       this.robotConfig = config;
       this.configLoaded = true;
+    },
+
+    /* ---- 传感器历史 (R00045) ---- */
+
+    setSensorHistory(data: { data: Record<string, Array<Record<string, number>>>; slots_metadata: Record<string, { unit: string }> }): void {
+      this.sensorHistory = data;
     },
   },
 });

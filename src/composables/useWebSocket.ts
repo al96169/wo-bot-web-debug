@@ -2048,6 +2048,11 @@ export function useWebSocket() {
         );
         break;
       }
+      // ---- 传感器历史数据 (R00045) ----
+      case "peripheral_history": {
+        robotStore.setSensorHistory(data as Parameters<typeof robotStore.setSensorHistory>[0]);
+        break;
+      }
     }
     // 通知所有消息监听器
     _messageListeners.forEach((fn) => {
@@ -2117,6 +2122,17 @@ export function useWebSocket() {
   }
   function requestModuleList(): void {
     _send({ type: "module_list", data: {} });
+  }
+  function sendPeripheralHistory(
+    slots: string[],
+    range: string = "1h",
+    fromTs?: number,
+    toTs?: number,
+  ): void {
+    _send({
+      type: "get_peripheral_history",
+      data: { slots, range, from_ts: fromTs, to_ts: toTs },
+    });
   }
   function sendDeviceControl(action: string, enabled: boolean): void {
     _send({ type: "device_control", data: { action, enabled } });
@@ -2348,6 +2364,7 @@ export function useWebSocket() {
     requestSoftwareList,
     requestSoftwareAvailable,
     requestModuleList,
+    sendPeripheralHistory,
     sendDeviceControl,
     sendSoftwareAction,
     sendWifiScan,
