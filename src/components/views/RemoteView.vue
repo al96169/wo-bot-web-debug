@@ -35,6 +35,7 @@ const {
   dcReadyState,
   localCandidates,
   remoteCandidates,
+  markVideoPlaying,
 } = useWebRTC();
 
 // 云台功能是否可用（服务端 features 包含 "gimbal"）
@@ -467,6 +468,8 @@ watch(
       bindVideoEvents(v, 0, stream);
       cameraLeftOn.value = true;
       startDebugLoop(0);
+      // loadeddata 作为 onunmute 的补充信号：某些浏览器 onunmute 不触发
+      v.addEventListener("loadeddata", () => markVideoPlaying(), { once: true });
     } else if (!stream) {
       // 断开连接时重置
       if (v) {
@@ -489,6 +492,8 @@ watch(
       bindVideoEvents(v, 1, stream);
       cameraRightOn.value = true;
       startDebugLoop(1);
+      // loadeddata 作为 onunmute 的补充信号：某些浏览器 onunmute 不触发
+      v.addEventListener("loadeddata", () => markVideoPlaying(), { once: true });
     } else if (!stream) {
       if (v) {
         v.srcObject = null;

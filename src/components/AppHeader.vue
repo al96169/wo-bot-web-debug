@@ -75,6 +75,7 @@ const ALL_NAV_ITEMS = [
   { view: "map", label: "🗺️ 地图", feature: null },
   { view: "gallery", label: "🖼️ 图库", feature: null },
   { view: "music", label: "🎵 音乐", feature: "music" },
+  { view: "irRemote" as const, label: "📟 红外遥控", feature: "ir_remote" },
   { view: "config", label: "⚙️ 配置", feature: null },
   { view: "sensorChart", label: "📈 传感器", feature: null },
 ] as const;

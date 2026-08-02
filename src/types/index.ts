@@ -261,6 +261,7 @@ export type ViewName =
   | "map"
   | "gallery"
   | "music"
+  | "irRemote"
   | "settings"
   | "processManager"
   | "config"

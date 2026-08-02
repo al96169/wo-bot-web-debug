@@ -36,6 +36,7 @@ import GalleryView from "@/components/views/GalleryView.vue";
 import SettingsView from "@/components/views/SettingsView.vue";
 import ProcessManagerView from "@/components/views/ProcessManagerView.vue";
 import MusicView from "@/components/views/MusicView.vue";
+import IRRemoteView from "@/components/views/IRRemoteView.vue";
 import ConfigView from "@/components/views/ConfigView.vue";
 import SensorChartView from "@/components/views/SensorChartView.vue";
 import BindView from "@/components/views/BindView.vue";
@@ -507,6 +508,7 @@ const viewsMap: Record<ViewName, unknown> = {
   settings: SettingsView,
   processManager: ProcessManagerView,
   music: MusicView,
+  irRemote: IRRemoteView,
   config: ConfigView,
   sensorChart: SensorChartView,
 };

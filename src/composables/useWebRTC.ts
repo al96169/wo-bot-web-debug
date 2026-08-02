@@ -156,6 +156,16 @@ export function useWebRTC() {
     }
   }
 
+  /** 标记视频已开始播放（供前端 loadeddata 事件作为 onunmute 的补充信号） */
+  function markVideoPlaying(): void {
+    if (!_videoPlaying) {
+      _videoPlaying = true;
+      _clearMediaTimeout();
+      _mediaRetryCount = 0;
+      console.log("[WebRTC:Media] markVideoPlaying() called via loadeddata fallback");
+    }
+  }
+
   function _startMediaTimeout(): void {
     _clearMediaTimeout();
     console.log("[WebRTC:Media] 启动媒体超时检测 (5s), 当前重试次数:", _mediaRetryCount);
@@ -246,6 +256,7 @@ export function useWebRTC() {
 
     // 清理旧状态，防止多次调用导致的竞态
     _clearPending();
+    _videoPlaying = false; // 重置视频播放状态，确保媒体超时检测正确工作
     videoStream0.value = null;
     videoStream1.value = null;
     if (pc.value) {
@@ -1169,5 +1180,6 @@ export function useWebRTC() {
     reconnect,
     resetAndOffer,
     requestLogs,
+    markVideoPlaying,
   };
 }
