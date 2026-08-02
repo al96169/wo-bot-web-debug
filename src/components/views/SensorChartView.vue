@@ -74,9 +74,7 @@ watch(
   { immediate: true },
 );
 
-const activeSlots = computed(() =>
-  slotsConfig.value.filter((s) => selectedSlots.value.includes(s.name)),
-);
+const activeSlots = computed(() => slotsConfig.value.filter((s) => selectedSlots.value.includes(s.name)));
 
 // ---- ECharts 加载 ----
 let echartsInstance: any = null;
@@ -150,12 +148,8 @@ function renderChart(data: any) {
       splitLine: { show: false },
     });
 
-    const tempData = rawData.dht11
-      .map((d: any) => [d.ts * 1000, d.temperature])
-      .filter((d: any) => d[1] != null);
-    const humData = rawData.dht11
-      .map((d: any) => [d.ts * 1000, d.humidity])
-      .filter((d: any) => d[1] != null);
+    const tempData = rawData.dht11.map((d: any) => [d.ts * 1000, d.temperature]).filter((d: any) => d[1] != null);
+    const humData = rawData.dht11.map((d: any) => [d.ts * 1000, d.humidity]).filter((d: any) => d[1] != null);
 
     legendData.push("温度", "湿度");
 
@@ -359,13 +353,11 @@ watch([range, selectedSlots], () => {
         >
           {{ slot.label }}
         </button>
-        <span v-if="slotsConfig.length === 0" class="no-sensors">
-          暂无已配置的传感器
-        </span>
+        <span v-if="slotsConfig.length === 0" class="no-sensors"> 暂无已配置的传感器 </span>
       </div>
       <div class="range-toggles">
         <button
-          v-for="r in (['1h','6h','24h','7d'] as const)"
+          v-for="r in ['1h', '6h', '24h', '7d'] as const"
           :key="r"
           class="range-btn"
           :class="{ active: range === r }"
@@ -378,7 +370,7 @@ watch([range, selectedSlots], () => {
 
     <!-- 图表区域：overlay 与 chart 分离，避免 ECharts 破坏 Vue DOM 锚点 -->
     <div class="chart-wrapper">
-      <div class="chart-container" ref="chartRef"></div>
+      <div ref="chartRef" class="chart-container"></div>
       <div v-if="!loaded && !error" class="chart-overlay">加载图表组件中...</div>
       <div v-if="loading" class="chart-overlay">加载数据中...</div>
       <div v-if="error" class="chart-overlay chart-error">

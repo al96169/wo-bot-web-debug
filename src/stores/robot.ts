@@ -612,7 +612,10 @@ export const useRobotStore = defineStore("robot", {
 
     /* ---- 传感器历史 (R00045) ---- */
 
-    setSensorHistory(data: { data: Record<string, Array<Record<string, number>>>; slots_metadata: Record<string, { unit: string }> }): void {
+    setSensorHistory(data: {
+      data: Record<string, Array<Record<string, number>>>;
+      slots_metadata: Record<string, { unit: string }>;
+    }): void {
       this.sensorHistory = data;
     },
   },

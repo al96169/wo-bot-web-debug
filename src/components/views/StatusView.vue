@@ -29,7 +29,7 @@ const STATE_LABELS: Record<string, string> = {
 const peripheralGroups = computed(() => {
   const peripherals = robotStore.systemStatus.peripherals;
   if (!peripherals) return [];
-  const groups: Record<string, { name: string; items: { slot: string; info: typeof peripherals[string] }[] }> = {};
+  const groups: Record<string, { name: string; items: { slot: string; info: (typeof peripherals)[string] }[] }> = {};
   for (const [slot, info] of Object.entries(peripherals)) {
     const cat = info.category || "other";
     if (!groups[cat]) groups[cat] = { name: catLabels[cat] || cat, items: [] };

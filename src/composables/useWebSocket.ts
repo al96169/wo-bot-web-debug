@@ -2123,12 +2123,7 @@ export function useWebSocket() {
   function requestModuleList(): void {
     _send({ type: "module_list", data: {} });
   }
-  function sendPeripheralHistory(
-    slots: string[],
-    range: string = "1h",
-    fromTs?: number,
-    toTs?: number,
-  ): void {
+  function sendPeripheralHistory(slots: string[], range: string = "1h", fromTs?: number, toTs?: number): void {
     _send({
       type: "get_peripheral_history",
       data: { slots, range, from_ts: fromTs, to_ts: toTs },
