@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useDevicesStore } from "../stores/devices";
-import { useRobotStore, type CameraInfo } from "../stores/robot";
+import { useRobotStore, type CameraInfo, type DeviceDetail } from "../stores/robot";
 import { useAuth } from "./useAuth";
 import { resolveWebRTCAnswer, handleWebRTCIceCandidate, useWebRTC } from "./useWebRTC";
 import type {
@@ -439,6 +439,17 @@ export function setPendingShareCode(code: string): void {
 
 /** 最大排队消息数量，防止断连时内存泄漏 */
 const MAX_PENDING_QUEUE = 50;
+
+/** R00046: 将秒数格式化为 'Xd Xh Xm' 形式 */
+function _formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
 
 // 通用发送：优先 DataChannel；DC 未就绪时用 WebSocket；都不行则暂存队列
 function _send(frame: WsMsg, forceWs = false): void {
@@ -1437,6 +1448,26 @@ export function useWebSocket() {
           hostname: String(sys.hostname ?? "--"),
           peripherals: (data.peripherals ?? {}) as Record<string, unknown>,
         } as Parameters<typeof robotStore.setSystemStatus>[0]);
+
+        // R00046: 从 device_info 构建设备详情列表
+        const devInfo = (data.device_info ?? {}) as Record<string, unknown>;
+        const details: DeviceDetail[] = [];
+        if (devInfo.hostname)
+          details.push({ label: "主机名", value: String(devInfo.hostname), icon: "🏷️", copyable: true });
+        if (devInfo.os) details.push({ label: "操作系统", value: String(devInfo.os), icon: "💻" });
+        if (devInfo.kernel) details.push({ label: "内核版本", value: String(devInfo.kernel), icon: "🔧" });
+        if (devInfo.cpu_model) details.push({ label: "CPU", value: String(devInfo.cpu_model), icon: "⚙️" });
+        if (devInfo.cpu_count) details.push({ label: "CPU 核心", value: `${devInfo.cpu_count} 核`, icon: "🔩" });
+        if (devInfo.ip) details.push({ label: "IP 地址", value: String(devInfo.ip), icon: "🌐", copyable: true });
+        if (devInfo.mac) details.push({ label: "MAC 地址", value: String(devInfo.mac), icon: "🔗", copyable: true });
+        if (devInfo.bluetooth_mac)
+          details.push({ label: "蓝牙 MAC", value: String(devInfo.bluetooth_mac), icon: "🔵", copyable: true });
+        if (devInfo.uptime != null)
+          details.push({ label: "本次运行", value: _formatDuration(Number(devInfo.uptime)), icon: "⏱️" });
+        if (devInfo.total_runtime != null)
+          details.push({ label: "累计运行", value: _formatDuration(Number(devInfo.total_runtime)), icon: "📊" });
+        if (details.length > 0) robotStore.setDeviceDetails(details);
+
         // 从 status 中同步 features（确保平板等客户端也能获取最新功能列表）
         if (Array.isArray(data.features) && data.features.length > 0) {
           _remoteFeatures.value = data.features as string[];

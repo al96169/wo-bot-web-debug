@@ -271,13 +271,7 @@ watch(currentDevice, (dev) => {
           <div class="device-state" :class="{ on: dev.state === 'on' }">
             {{ dev.state === "on" ? "开" : "关" }}
           </div>
-          <button
-            class="btn-delete-device"
-            title="删除设备"
-            @click.stop="handleDeleteDevice(dev)"
-          >
-            ✕
-          </button>
+          <button class="btn-delete-device" title="删除设备" @click.stop="handleDeleteDevice(dev)">✕</button>
         </div>
 
         <div v-if="devices.length === 0 && !loading" class="empty-devices">
@@ -312,13 +306,7 @@ watch(currentDevice, (dev) => {
             <button class="btn-tool" @click="exportCodes(currentDevice.device_id)">📥 导出设备</button>
             <button class="btn-tool" @click="exportCodes()">📤 导出全部</button>
             <button class="btn-tool" @click="handleImportClick">📥 导入码库</button>
-            <input
-              ref="fileInput"
-              type="file"
-              accept=".json"
-              style="display: none"
-              @change="handleFileChange"
-            />
+            <input ref="fileInput" type="file" accept=".json" style="display: none" @change="handleFileChange" />
           </div>
         </div>
 
@@ -362,9 +350,7 @@ watch(currentDevice, (dev) => {
             <div class="pulse-ring delay"></div>
             <div class="pulse-core">{{ categoryIcon(currentDevice?.category ?? "other") }}</div>
           </div>
-          <div class="learn-countdown" :class="{ timeout: learnState === 'timeout' }">
-            {{ learnCountdown }}s
-          </div>
+          <div class="learn-countdown" :class="{ timeout: learnState === 'timeout' }">{{ learnCountdown }}s</div>
           <div class="learn-text">
             {{ learnState === "timeout" ? "学习超时" : "请将遥控器对准红外模块，按下按键..." }}
           </div>
@@ -409,9 +395,7 @@ watch(currentDevice, (dev) => {
           </div>
           <div class="modal-actions">
             <button class="btn-modal cancel" @click="showAddDevice = false">取消</button>
-            <button class="btn-modal confirm" :disabled="!newDeviceName.trim()" @click="confirmAddDevice">
-              确认
-            </button>
+            <button class="btn-modal confirm" :disabled="!newDeviceName.trim()" @click="confirmAddDevice">确认</button>
           </div>
         </div>
       </div>
@@ -459,12 +443,7 @@ watch(currentDevice, (dev) => {
         <button class="menu-item danger" @click="handleButtonDelete">🗑️ 删除</button>
       </template>
       <template v-else>
-        <input
-          v-model="renameInputValue"
-          type="text"
-          class="menu-input"
-          @keyup.enter="confirmButtonRename"
-        />
+        <input v-model="renameInputValue" type="text" class="menu-input" @keyup.enter="confirmButtonRename" />
         <div class="menu-actions">
           <button class="menu-btn confirm" @click="confirmButtonRename">确认</button>
           <button class="menu-btn cancel" @click="closeButtonMenu">取消</button>
@@ -477,9 +456,7 @@ watch(currentDevice, (dev) => {
       <div v-if="deleteConfirm" class="modal-overlay" @click.self="deleteConfirm = null">
         <div class="modal-box small">
           <div class="modal-title">确认删除</div>
-          <div class="modal-body">
-            确定要删除设备「{{ deleteConfirm.name }}」及其所有按键吗？此操作不可撤销。
-          </div>
+          <div class="modal-body">确定要删除设备「{{ deleteConfirm.name }}」及其所有按键吗？此操作不可撤销。</div>
           <div class="modal-actions">
             <button class="btn-modal cancel" @click="deleteConfirm = null">取消</button>
             <button class="btn-modal danger" @click="confirmDeleteDevice">删除</button>

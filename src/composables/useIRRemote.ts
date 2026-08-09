@@ -225,9 +225,7 @@ export function useIRRemote(send: SendFn) {
           const idx = devices.value.findIndex((d) => d.device_id === devId);
           if (idx !== -1) {
             const dev = { ...devices.value[idx] };
-            dev.buttons = dev.buttons.map((b) =>
-              b.id === btnId ? { ...b, name: newName || b.name } : b,
-            );
+            dev.buttons = dev.buttons.map((b) => (b.id === btnId ? { ...b, name: newName || b.name } : b));
             devices.value[idx] = dev;
             if (currentDevice.value?.device_id === devId) {
               currentDevice.value = dev;
@@ -284,9 +282,10 @@ export function useIRRemote(send: SendFn) {
         } else {
           const detail = data.detail as Record<string, unknown> | undefined;
           const errors = detail?.errors;
-          const errMsg = Array.isArray(errors) && errors.length > 0
-            ? String(errors[0])
-            : String(data.error ?? data.message ?? "未知错误");
+          const errMsg =
+            Array.isArray(errors) && errors.length > 0
+              ? String(errors[0])
+              : String(data.error ?? data.message ?? "未知错误");
           appStore.showToast(`导入失败: ${errMsg}`, "error");
         }
         break;
@@ -338,12 +337,7 @@ export function useIRRemote(send: SendFn) {
   }
 
   /** 新增设备 */
-  function addDevice(data: {
-    name: string;
-    brand?: string;
-    model?: string;
-    category?: string;
-  }): void {
+  function addDevice(data: { name: string; brand?: string; model?: string; category?: string }): void {
     loading.value = true;
     send({
       type: "ir_device_add",
@@ -439,10 +433,7 @@ export function useIRRemote(send: SendFn) {
   }
 
   /** 导入码库 */
-  function importCodes(
-    data: unknown,
-    conflictPolicy: "skip" | "overwrite" = "skip",
-  ): void {
+  function importCodes(data: unknown, conflictPolicy: "skip" | "overwrite" = "skip"): void {
     loading.value = true;
     send({
       type: "ir_codes_import",

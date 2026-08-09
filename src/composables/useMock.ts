@@ -105,12 +105,16 @@ export function useMock() {
 
     // 设备详情
     robotStore.setDeviceDetails([
-      { label: "设备型号", value: "WB-MK3", copyable: true },
-      { label: "序列号", value: "WB2025-DEV-001", copyable: true },
-      { label: "固件版本", value: "v4.2.1-beta", copyable: true },
-      { label: "ROS 版本", value: "2.1.0 Humble", copyable: true },
-      { label: "操作系统", value: "Ubuntu 22.04 LTS", copyable: true },
-      { label: "内核版本", value: "5.15.0-102-generic", copyable: true },
+      { label: "主机名", value: "wobot-jetson", icon: "🏷️", copyable: true },
+      { label: "操作系统", value: "Ubuntu 22.04 LTS", icon: "💻" },
+      { label: "内核版本", value: "5.15.0-102-generic", icon: "🔧" },
+      { label: "CPU", value: "Quad-core ARM Cortex-A57", icon: "⚙️" },
+      { label: "CPU 核心", value: "4 核", icon: "🔩" },
+      { label: "IP 地址", value: "192.168.1.100", icon: "🌐", copyable: true },
+      { label: "MAC 地址", value: "AA:BB:CC:DD:EE:FF", icon: "🔗", copyable: true },
+      { label: "蓝牙 MAC", value: "AA:BB:CC:DD:EE:00", icon: "🔵", copyable: true },
+      { label: "本次运行", value: "1h 25m", icon: "⏱️" },
+      { label: "累计运行", value: "15d 8h 30m", icon: "📊" },
     ]);
 
     // 推送初始系统状态 BEFORE 启动定时器
