@@ -25,8 +25,11 @@ const {
   sendStreamQuality,
 } = useWebSocket();
 const {
+  pc,
   videoStream0,
   videoStream1,
+  syncVideoStreams,
+  reconnect,
   webrtcState,
   iceConnectionState,
   iceGatheringState,
@@ -405,6 +408,50 @@ let _onVid0Waiting: (() => void) | null = null;
 let _onVid1Stalled: (() => void) | null = null;
 let _onVid1Waiting: (() => void) | null = null;
 
+/**
+ * 安全播放：`play()` 可能被"新的 load 请求"打断（AbortError）。
+ * 典型场景：刚设置 srcObject 就 play()，或短时间内重复赋值 srcObject。
+ * 被 AbortError 打断时等加载完成后重试一次，避免画面停在白屏。
+ */
+async function safePlay(videoEl: HTMLVideoElement, idx: 0 | 1): Promise<void> {
+  try {
+    await videoEl.play();
+  } catch (e) {
+    if ((e as DOMException)?.name === "AbortError") {
+      await new Promise<void>((resolve) => {
+        const done = () => resolve();
+        videoEl.addEventListener("loadeddata", done, { once: true });
+        setTimeout(done, 1000); // 兜底：避免一直等不到 loadeddata
+      });
+      try {
+        await videoEl.play();
+      } catch (e2) {
+        console.error(`[Video] cam${idx} 重试 play() 仍失败:`, e2);
+      }
+    } else {
+      console.error(`[Video] cam${idx} play() 失败:`, e);
+    }
+  }
+}
+
+/**
+ * 把媒体流挂到 <video> 上。
+ * 只在流确实变化时才重新赋值 srcObject —— 重复赋值会触发新的 load，
+ * 打断进行中的 play()（AbortError），表现为画面白屏。
+ */
+function attachStream(videoEl: HTMLVideoElement | null, stream: MediaStream | null, idx: 0 | 1): void {
+  if (!videoEl) return;
+  if (!stream) {
+    if (videoEl.srcObject) videoEl.srcObject = null;
+    return;
+  }
+  videoEl.muted = true; // iOS WebKit 需要显式设置才能 autoplay
+  if (videoEl.srcObject !== stream) {
+    videoEl.srcObject = stream;
+  }
+  void safePlay(videoEl, idx);
+}
+
 function bindVideoEvents(videoEl: HTMLVideoElement, idx: 0 | 1, stream: MediaStream): void {
   // 移除旧监听器
   unbindVideoEvents(videoEl, idx);
@@ -413,10 +460,9 @@ function bindVideoEvents(videoEl: HTMLVideoElement, idx: 0 | 1, stream: MediaStr
     console.warn(
       `[Video] cam${idx} stalled, currentTime:${videoEl.currentTime}, paused:${videoEl.paused}, ready:${videoEl.readyState}, network:${videoEl.networkState}`,
     );
-    // 尝试恢复：重新绑定 srcObject
+    // 尝试恢复：重新挂流并播放（attachStream 会避免多余的 srcObject 赋值）
     if (videoEl.srcObject) {
-      videoEl.srcObject = stream;
-      videoEl.play().catch((e) => console.error("[Video] cam" + idx + " stalled恢复播放失败:", e));
+      attachStream(videoEl, stream, idx);
     }
   };
   const onWaiting = () => {
@@ -462,9 +508,7 @@ watch(
   (stream) => {
     const v = videoLeftRef.value;
     if (stream && v) {
-      v.muted = true; // iOS WebKit 需要显式设置才能 autoplay
-      v.srcObject = stream;
-      v.play().catch((e) => console.error("[Video] cam0 play() 失败:", e));
+      attachStream(v, stream, 0);
       bindVideoEvents(v, 0, stream);
       cameraLeftOn.value = true;
       startDebugLoop(0);
@@ -473,7 +517,7 @@ watch(
     } else if (!stream) {
       // 断开连接时重置
       if (v) {
-        v.srcObject = null;
+        attachStream(v, null, 0);
         unbindVideoEvents(v, 0);
       }
       cameraLeftOn.value = false;
@@ -486,9 +530,7 @@ watch(
   (stream) => {
     const v = videoRightRef.value;
     if (stream && v) {
-      v.muted = true; // iOS WebKit 需要显式设置才能 autoplay
-      v.srcObject = stream;
-      v.play().catch((e) => console.error("[Video] cam1 play() 失败:", e));
+      attachStream(v, stream, 1);
       bindVideoEvents(v, 1, stream);
       cameraRightOn.value = true;
       startDebugLoop(1);
@@ -496,7 +538,7 @@ watch(
       v.addEventListener("loadeddata", () => markVideoPlaying(), { once: true });
     } else if (!stream) {
       if (v) {
-        v.srcObject = null;
+        attachStream(v, null, 1);
         unbindVideoEvents(v, 1);
       }
       cameraRightOn.value = false;
@@ -511,12 +553,45 @@ const videoDebug1 = ref<string>("");
 let _debugTimer0: ReturnType<typeof setInterval> | null = null;
 let _debugTimer1: ReturnType<typeof setInterval> | null = null;
 
+let _lastEnsureAt = 0;
+
+/**
+ * 自愈：摄像头已开但 WebRTC 链路不可用（没有 PC，或 PC 已 failed/closed/disconnected）时触发重连。
+ *
+ * 背景：establishConnection() 在 features 尚未包含 "webrtc" 时会直接返回且不再重试；
+ * 若首次调用撞上这个竞态（经过多次重启后很容易发生），就会永远没有 PeerConnection，
+ * 表现为视频元素 srcObj:false 的纯白占位层。这里兜底重连，3s 防抖。
+ */
+function ensureVideoLink(): void {
+  if (!cameraLeftOn.value && !cameraRightOn.value) return;
+  const conn = pc.value;
+  const state = conn?.connectionState;
+  if (conn && state !== "failed" && state !== "closed" && state !== "disconnected") return;
+  const now = Date.now();
+  if (now - _lastEnsureAt < 3000) return;
+  _lastEnsureAt = now;
+  console.warn("[Video] 摄像头已开但 WebRTC 链路不可用 (pc:", !!conn, "state:", state, ") → 触发重连");
+  void reconnect();
+}
+
 function updateVideoDebug(idx: 0 | 1): void {
+  // 500ms 巡检时顺带做两件事：
+  //   1) 流同步：服务端 replaceTrack 不会触发 ontrack，从 PC 接收器兜底把流挂回引用
+  //   2) 链路自愈：摄像头开着但链路死了就重连
+  syncVideoStreams();
+  ensureVideoLink();
   const videoEl = idx === 0 ? videoLeftRef.value : videoRightRef.value;
   const dbgRef = idx === 0 ? videoDebug0 : videoDebug1;
   if (!videoEl) return;
   const track = (idx === 0 ? videoStream0.value : videoStream1.value)?.getVideoTracks()?.[0];
+  // 诊断用：连接是否存在 / PC 上有几个视频接收器 / 两个流引用是否有值
+  const conn = pc.value;
+  const rxCount = conn ? conn.getReceivers().filter((r) => r.track && r.track.kind === "video").length : -1;
   dbgRef.value = [
+    `pc:${!!conn}`,
+    `rx:${rxCount}`,
+    `s0:${!!videoStream0.value}`,
+    `s1:${!!videoStream1.value}`,
     `srcObj:${!!videoEl.srcObject}`,
     `pause:${videoEl.paused}`,
     `${videoEl.videoWidth}x${videoEl.videoHeight}`,
@@ -779,9 +854,8 @@ function toggleLeftCamera() {
   if (cameraLeftOn.value) {
     const v = videoLeftRef.value;
     if (v && videoStream0.value) {
-      v.srcObject = null;
-      v.srcObject = videoStream0.value;
-      v.play().catch((e) => console.error("[Video] cam0 toggle play() 失败:", e));
+      // 不要"先置 null 再赋值"：那会触发两次 load，打断进行中的 play()（AbortError → 白屏）
+      attachStream(v, videoStream0.value, 0);
     }
     sendCamera("start", camId);
     robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `左摄像头(${camId}) → start` });
@@ -799,9 +873,8 @@ function toggleRightCamera() {
   if (cameraRightOn.value) {
     const v = videoRightRef.value;
     if (v && videoStream1.value) {
-      v.srcObject = null;
-      v.srcObject = videoStream1.value;
-      v.play().catch((e) => console.error("[Video] cam1 toggle play() 失败:", e));
+      // 同上：避免多余的 load 打断 play()
+      attachStream(v, videoStream1.value, 1);
     }
     sendCamera("start", camId);
     robotStore.addCmdLog({ time: textTime(), direction: "send", type: "camera", data: `右摄像头(${camId}) → start` });
@@ -931,15 +1004,11 @@ function handleAction(action: string) {
 function rebindVideoStreams(): void {
   // 仅当用户之前已开启摄像头时才重新绑定，保留用户的开关状态
   if (videoStream0.value && videoLeftRef.value && cameraLeftOn.value) {
-    videoLeftRef.value.muted = true;
-    videoLeftRef.value.srcObject = videoStream0.value;
-    videoLeftRef.value.play().catch((e) => console.error("[Video] cam0 rebind play() 失败:", e));
+    attachStream(videoLeftRef.value, videoStream0.value, 0);
     bindVideoEvents(videoLeftRef.value, 0, videoStream0.value);
   }
   if (videoStream1.value && videoRightRef.value && cameraRightOn.value) {
-    videoRightRef.value.muted = true;
-    videoRightRef.value.srcObject = videoStream1.value;
-    videoRightRef.value.play().catch((e) => console.error("[Video] cam1 rebind play() 失败:", e));
+    attachStream(videoRightRef.value, videoStream1.value, 1);
     bindVideoEvents(videoRightRef.value, 1, videoStream1.value);
   }
 }
@@ -1117,13 +1186,8 @@ onDeactivated(() => {
           </div>
 
           <div class="quick-actions">
-            <button
-              class="action-btn toggle"
-              :class="{ active: appStore.toggleStates.flashlight }"
-              @click="handleAction('flashlight')"
-            >
-              🔦 手电
-            </button>
+            <!-- T015 手电：机器人暂无手电硬件，暂缓实现 -->
+            <button class="action-btn toggle" disabled title="暂缓：机器人暂无手电硬件（T015）">🔦 手电</button>
             <button v-if="gimbalAvailable" class="action-btn center" @click="sendGimbalCenter()">🎯 回中</button>
             <button class="action-btn danger" @click="handleAction('emergency')">🛑 急停</button>
             <button class="action-btn center" @click="handleAction('emergency_release')">✅ 释放</button>
@@ -1398,6 +1462,14 @@ onDeactivated(() => {
   border-color: var(--danger);
   color: #fff;
   animation: record-pulse 1.5s ease-in-out infinite;
+}
+.action-btn:disabled,
+.action-btn:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-muted);
 }
 /* 画质选择器 */
 select.action-btn.quality-select {

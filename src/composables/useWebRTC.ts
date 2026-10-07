@@ -517,6 +517,8 @@ export function useWebRTC() {
           _startMediaTimeout();
           appStore.setSSHConnected(true);
           _clearIceFallback();
+          // 连接就绪后立即从接收器同步视频流，避免依赖 replaceTrack 不会触发的 ontrack
+          syncVideoStreams();
         } else if (state === "failed" || state === "disconnected") {
           _clearGatheringFallback();
           webrtcState.value = "failed";
@@ -1160,11 +1162,37 @@ export function useWebRTC() {
     }
   }
 
+  /**
+   * 依据当前 PC 的接收器重建两路视频流引用（cam0/cam1）。
+   *
+   * 为什么需要：服务端用 replaceTrack 挂载/切换摄像头轨道，而 replaceTrack
+   * **不会**在对端重新触发 ontrack。一旦流引用被 establishConnection()/close()
+   * 清空（重连路径），就再没有事件把它填回来，画面会永久停在
+   * "等待视频流..." 占位层。这里按 transceiver 顺序把接收器上的视频轨映射回槽位，
+   * 作为 ontrack 之外的兜底来源。
+   */
+  function syncVideoStreams(): void {
+    const conn = pc.value;
+    if (!conn || typeof conn.getReceivers !== "function") return;
+    const receivers = conn.getReceivers().filter((r) => r.track && r.track.kind === "video");
+    receivers.forEach((r, i) => {
+      if (i > 1) return;
+      const prev = i === 0 ? videoStream0.value : videoStream1.value;
+      // 已经是同一条轨道就不重建，避免 video 元素每 500ms 反复重载
+      if (prev && prev.getVideoTracks()[0] === r.track) return;
+      const stream = new MediaStream([r.track]);
+      if (i === 0) videoStream0.value = stream;
+      else videoStream1.value = stream;
+      console.log(`[WebRTC] syncVideoStreams -> cam${i}`, r.track.id, r.track.readyState);
+    });
+  }
+
   return {
     pc,
     dc,
     videoStream0,
     videoStream1,
+    syncVideoStreams,
     webrtcState,
     iceConnectionState,
     iceGatheringState,
