@@ -20,6 +20,7 @@ import type {
   Software,
   SoftwareTask,
   StoredBinding,
+  ToggleKey,
 } from "../types";
 
 /* ============================================================
@@ -1609,8 +1610,28 @@ export function useWebSocket() {
       }
       case "module_control_ack":
         break;
-      case "device_control_ack":
+      case "device_control_ack": {
+        // 后端未实现的动作会回执 unsupported：撤销前端的乐观切换并提示
+        const action = data.action as string;
+        const status = data.status as string;
+        if (status === "unsupported") {
+          if (action === "flashlight" || action === "mute" || action === "charge") {
+            appStore.toggleStates[action as ToggleKey] = !data.enabled;
+          }
+          appStore.showToast(String(data.message ?? "该功能尚未实现"), "info");
+        } else if (status === "ok" && (action === "flashlight" || action === "charge")) {
+          appStore.toggleStates[action as ToggleKey] = Boolean(data.enabled);
+        }
         break;
+      }
+      case "audio_mute_status": {
+        // 以服务端真实状态为准（T017 一键静音）
+        appStore.toggleStates.mute = Boolean(data.enabled);
+        if (typeof data.error === "string" && data.error) {
+          appStore.showToast(data.error, "error");
+        }
+        break;
+      }
       case "power_policy_status": {
         robotStore.setPowerPolicy({
           mode: data.mode as "normal" | "eco",

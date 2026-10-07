@@ -65,7 +65,14 @@ function handleFind() {
 
 onUnmounted(() => clearFindTimer());
 
-const actionItems: { action: ToggleKey | "emergency"; label: string; cssClass: string; cmdType: string }[] = [
+const actionItems: {
+  action: ToggleKey | "emergency";
+  label: string;
+  cssClass: string;
+  cmdType: string;
+  disabled?: boolean;
+  hint?: string;
+}[] = [
   {
     action: "find",
     get label() {
@@ -74,7 +81,15 @@ const actionItems: { action: ToggleKey | "emergency"; label: string; cssClass: s
     cssClass: "toggle",
     cmdType: "find",
   },
-  { action: "flashlight", label: "🔦 手电", cssClass: "toggle", cmdType: "flashlight" },
+  // T015 手电：机器人暂无手电硬件，暂缓实现
+  {
+    action: "flashlight",
+    label: "🔦 手电",
+    cssClass: "toggle",
+    cmdType: "flashlight",
+    disabled: true,
+    hint: "暂缓：机器人暂无手电硬件（T015）",
+  },
   { action: "charge", label: "🔌 去充电", cssClass: "toggle", cmdType: "charge" },
   { action: "mute", label: "🔇 静音", cssClass: "toggle", cmdType: "mute" },
   {
@@ -93,6 +108,12 @@ function textTime() {
 }
 
 function handleAction(action: string, cmdType: string) {
+  // 未实现/暂缓的动作：不发送命令，明确提示
+  const item = actionItems.find((i) => i.action === action);
+  if (item?.disabled) {
+    appStore.showToast(item.hint ?? "该功能暂不可用", "info");
+    return;
+  }
   // 寻找设备：独立二态 + 倒计时处理
   if (action === "find") {
     handleFind();
@@ -153,6 +174,8 @@ function handleVolumeChange(e: Event) {
         v-for="item in actionItems"
         :key="item.action"
         class="action-card"
+        :disabled="item.disabled"
+        :title="item.hint"
         :class="{
           [item.cssClass]: true,
           active:
@@ -259,6 +282,14 @@ h2 {
 }
 .action-card.danger:hover {
   background: rgba(255, 71, 87, 0.1);
+}
+.action-card:disabled,
+.action-card:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: var(--bg-card);
+  transform: none;
 }
 .quick-actions-extra {
   display: flex;
