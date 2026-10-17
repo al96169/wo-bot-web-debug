@@ -1677,6 +1677,10 @@ export function useWebSocket() {
       case "hw_diagnostics": {
         // 硬件诊断（来自独立诊断子服务，主服务经 WS 转发）
         appStore.setDiagnostics((data ?? null) as Record<string, unknown> | null);
+        // 自检项列表：不依赖 onMounted（HMR 热更新不会重跑它，曾导致"一直加载中"）
+        if (!appStore.selftestList.length) {
+          _send({ type: "actuator_selftest_list", data: {} });
+        }
         break;
       }
       case "safety_status": {
