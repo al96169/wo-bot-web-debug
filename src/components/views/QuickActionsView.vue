@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useRobotStore } from "@/stores/robot";
 import { useWebSocket } from "@/composables/useWebSocket";
@@ -7,7 +7,30 @@ import type { ToggleKey } from "@/types";
 
 const appStore = useAppStore();
 const robotStore = useRobotStore();
-const { sendDeviceControl, sendEmergencyStop, sendMusicCommand } = useWebSocket();
+const {
+  sendDeviceControl,
+  sendEmergencyStop,
+  sendEmergencyRelease,
+  sendMusicCommand,
+  sendControlMode,
+  sendControlModeGet,
+} = useWebSocket();
+
+// 挂载时回读服务端真实状态（S0/S1：模式与安全状态都由服务端托管，不能只信本地 store）
+// 硬件诊断：经 WS 推送（本项目约定，不用 REST 轮询）
+onMounted(() => {
+  sendControlModeGet();
+});
+
+// 模式 <select> 的回弹：被服务端拒绝时 store 未变、Vue 不会重新 patch，
+// DOM 会停在用户选的项上（看起来像"点了没反应"），必须显式拉回真实模式。
+const modeSelect = ref<HTMLSelectElement | null>(null);
+watch(
+  () => appStore.modeRejection.count,
+  () => {
+    if (modeSelect.value) modeSelect.value.value = appStore.controlMode;
+  },
+);
 
 // ---- 寻找设备：二态 + 30s 倒计时 ----
 const FIND_DURATION = 30;
@@ -141,10 +164,16 @@ function handleAction(action: string, cmdType: string) {
 }
 
 function handleControlModeChange(e: Event) {
-  const target = e.target as HTMLSelectElement;
-  appStore.controlMode = target.value as "manual" | "semi" | "auto";
-  robotStore.addCmdLog({ time: textTime(), direction: "send", type: "mode", data: `控制模式 → ${target.value}` });
-  appStore.saveSettings();
+  const sel = e.target as HTMLSelectElement;
+  const target = sel.value as "manual" | "semi" | "auto";
+  // 不再弹二次确认：模式切换即时生效，失败时由服务端返回原因并回弹
+  sendControlMode(target, true);
+  robotStore.addCmdLog({
+    time: textTime(),
+    direction: "send",
+    type: "mode",
+    data: `控制模式 → ${target}`,
+  });
 }
 
 let volTimer: ReturnType<typeof setTimeout> | null = null;
@@ -194,11 +223,37 @@ function handleVolumeChange(e: Event) {
     <div class="quick-actions-extra">
       <div class="control-mode-card">
         <h4>🎛️ 控制模式</h4>
-        <select :value="appStore.controlMode" @change="handleControlModeChange">
+        <!-- S1：安全停车优先级最高，必须最显眼；解除需用户显式操作（不自动恢复） -->
+        <p v-if="appStore.safety.tripped" class="safety-banner">
+          🛑 已安全停车：[{{ appStore.safety.kind }}] {{ appStore.safety.reason }}
+          <button class="safety-release" @click="sendEmergencyRelease">解除急停</button>
+        </p>
+        <select ref="modeSelect" :value="appStore.controlMode" @change="handleControlModeChange">
           <option value="manual">手动操控</option>
           <option value="semi">半自动巡航</option>
           <option value="auto">全自动导航</option>
         </select>
+        <!-- 安全降级必须显式提示用户，不允许静默（S0） -->
+        <p v-if="appStore.controlModeStatus.degraded" class="mode-degraded">
+          ⚠️ 已安全降级到手动：{{ appStore.controlModeStatus.degradeReason || "未指明原因" }}
+        </p>
+        <p v-else-if="!appStore.controlModeStatus.allowSemi && !appStore.controlModeStatus.allowAuto" class="mode-hint">
+          自主模式当前被服务端禁用（navigation.mode）
+        </p>
+        <!-- 被拒绝的原因要持续可见（不能只靠一闪而过的 toast） -->
+        <p v-if="appStore.modeRejection.message" class="mode-rejected">
+          ⛔ {{ appStore.modeRejection.message }} <br />启用方法：在 config.yaml 把 navigation.mode.allow_semi /
+          allow_auto 设为 true 并重启服务
+        </p>
+        <!-- 里程计位姿（S0）：未标定时只显示航向，不假装知道距离 -->
+        <p v-if="appStore.odometry" class="odom-line">
+          pose
+          <template v-if="appStore.odometry.calibrated">
+            x={{ appStore.odometry.x.toFixed(2) }}m y={{ appStore.odometry.y.toFixed(2) }}m
+          </template>
+          <template v-else>（未标定·仅航向）</template>
+          θ={{ appStore.odometry.thetaDeg.toFixed(1) }}° v={{ appStore.odometry.v.toFixed(2) }}m/s
+        </p>
       </div>
       <div class="volume-card">
         <h4>🔊 音量</h4>
@@ -318,6 +373,56 @@ h2 {
   color: var(--text-primary);
   border: 1px solid var(--border);
   font-size: 14px;
+}
+/* S1：安全停车横幅 —— 必须显眼，因为机器人已停止响应运动指令 */
+.control-mode-card .safety-banner {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(229, 72, 77, 0.14);
+  border: 1px solid var(--danger, #e5484d);
+  color: var(--danger, #e5484d);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.control-mode-card .safety-release {
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--danger, #e5484d);
+  background: transparent;
+  color: var(--danger, #e5484d);
+  font-size: 12px;
+  cursor: pointer;
+}
+/* S0：安全降级提示与位姿显示 */
+.control-mode-card .mode-degraded {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--danger, #e5484d);
+}
+.control-mode-card .mode-rejected {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(229, 72, 77, 0.1);
+  border: 1px solid var(--danger, #e5484d);
+  color: var(--danger, #e5484d);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.control-mode-card .mode-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.control-mode-card .odom-line {
+  margin: 6px 0 0;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: normal;
 }
 .volume-card {
   display: flex;

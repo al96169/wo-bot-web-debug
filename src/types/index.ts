@@ -251,6 +251,7 @@ export interface MusicStatus {
 
 /** 视图名称 */
 export type ViewName =
+  | "diagnostics"
   | "quickActions"
   | "logs"
   | "messages"

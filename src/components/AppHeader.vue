@@ -78,6 +78,7 @@ const ALL_NAV_ITEMS = [
   { view: "irRemote" as const, label: "📟 红外遥控", feature: "ir_remote" },
   { view: "config", label: "⚙️ 配置", feature: null },
   { view: "sensorChart", label: "📈 传感器", feature: null },
+  { view: "diagnostics", label: "🩺 诊断", feature: null },
 ] as const;
 
 /** 根据机器人 features 动态计算可见导航项 */

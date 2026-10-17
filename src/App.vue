@@ -39,6 +39,7 @@ import MusicView from "@/components/views/MusicView.vue";
 import IRRemoteView from "@/components/views/IRRemoteView.vue";
 import ConfigView from "@/components/views/ConfigView.vue";
 import SensorChartView from "@/components/views/SensorChartView.vue";
+import DiagnosticsView from "@/components/views/DiagnosticsView.vue";
 import BindView from "@/components/views/BindView.vue";
 import type { Device, ViewName, AuthRequiredData } from "@/types";
 import AddDeviceDialog from "@/components/dialogs/AddDeviceDialog.vue";
@@ -511,6 +512,7 @@ const viewsMap: Record<ViewName, unknown> = {
   irRemote: IRRemoteView,
   config: ConfigView,
   sensorChart: SensorChartView,
+  diagnostics: DiagnosticsView,
 };
 </script>
 

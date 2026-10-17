@@ -32,6 +32,45 @@ export const useAppStore = defineStore("app", {
     /** 控制模式: manual | semi | auto */
     controlMode: "manual" as ControlMode,
 
+    /** 控制模式的服务端真实状态（含安全降级原因 —— 降级不允许静默，S0） */
+    controlModeStatus: {
+      degraded: false,
+      degradeReason: null as string | null,
+      allowSemi: false,
+      allowAuto: false,
+    },
+
+    /** 轮子主动自检结果（null=未运行） */
+    wheelSelftest: null as null | Record<string, unknown>,
+
+    /** 硬件诊断报告（来自独立诊断子服务，经主服务 WS 转发） */
+    diagnostics: null as null | Record<string, unknown>,
+
+    /** 安全底座状态（S1）：触发即停车，且**不会自动恢复** */
+    safety: {
+      tripped: false,
+      reason: null as string | null,
+      kind: null as string | null,
+    },
+
+    /** 最近一次模式切换被服务端拒绝（S0）。
+     *  为什么需要：只弹 toast 会一闪而过，而 <select> 的 DOM 值会停在用户选的项上，
+     *  看起来像"点了没反应"。这里留下持久状态用于回弹选择器 + 持续提示。 */
+    modeRejection: {
+      count: 0,
+      message: "",
+    },
+
+    /** 里程计位姿（S0）；null = 尚未收到 */
+    odometry: null as null | {
+      x: number;
+      y: number;
+      thetaDeg: number;
+      v: number;
+      calibrated: boolean;
+      quality: string;
+    },
+
     /** 键盘控制是否启用 */
     keyboardEnabled: false,
 
@@ -117,6 +156,62 @@ export const useAppStore = defineStore("app", {
     setControlMode(mode: ControlMode) {
       this.controlMode = mode;
       this.saveSettings();
+    },
+
+    /** 记录轮子自检结果 */
+    setWheelSelftest(data: Record<string, unknown> | null) {
+      this.wheelSelftest = data;
+    },
+
+    /** 更新硬件诊断报告 */
+    setDiagnostics(data: Record<string, unknown> | null) {
+      this.diagnostics = data;
+    },
+
+    /** 应用服务端下发的控制模式状态（S0） */
+    applyControlModeStatus(data: Record<string, unknown>) {
+      if (typeof data.mode === "string") {
+        this.controlMode = data.mode as ControlMode;
+      }
+      this.controlModeStatus.degraded = Boolean(data.degraded);
+      this.controlModeStatus.degradeReason = typeof data.degrade_reason === "string" ? data.degrade_reason : null;
+      if (data.allow_semi !== undefined) this.controlModeStatus.allowSemi = Boolean(data.allow_semi);
+      if (data.allow_auto !== undefined) this.controlModeStatus.allowAuto = Boolean(data.allow_auto);
+    },
+
+    /** 更新安全状态（S1）。触发原因必须展示给用户 —— 安全停车不允许静默 */
+    applySafetyStatus(data: Record<string, unknown>) {
+      if (data.available === false) {
+        this.safety = { tripped: false, reason: null, kind: null };
+        return;
+      }
+      const active = (data.active ?? null) as Record<string, unknown> | null;
+      this.safety = {
+        tripped: Boolean(data.tripped),
+        reason: active && typeof active.reason === "string" ? active.reason : null,
+        kind: active && typeof active.kind === "string" ? active.kind : null,
+      };
+    },
+
+    /** 记录模式切换被拒绝（S0） */
+    setModeRejection(message: string) {
+      this.modeRejection = { count: this.modeRejection.count + 1, message };
+    },
+
+    /** 更新里程计位姿（S0） */
+    setOdometry(pose: Record<string, unknown> | null) {
+      if (!pose) {
+        this.odometry = null;
+        return;
+      }
+      this.odometry = {
+        x: Number(pose.x ?? 0),
+        y: Number(pose.y ?? 0),
+        thetaDeg: Number(pose.theta_deg ?? 0),
+        v: Number(pose.v ?? 0),
+        calibrated: Boolean(pose.calibrated),
+        quality: typeof pose.quality === "string" ? pose.quality : "",
+      };
     },
 
     /** Set volume */

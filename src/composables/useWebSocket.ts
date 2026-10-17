@@ -1632,6 +1632,61 @@ export function useWebSocket() {
         }
         break;
       }
+      case "control_mode_status": {
+        // 以服务端为准（S0：模式不再是前端空壳）
+        appStore.applyControlModeStatus(data as Record<string, unknown>);
+        if (data.degraded && typeof data.degrade_reason === "string") {
+          appStore.showToast(`已安全降级到手动模式：${data.degrade_reason}`, "error");
+        }
+        break;
+      }
+      case "control_mode_ack": {
+        if (data.ok === false) {
+          const reason = String(data.message || "模式切换被拒绝");
+          appStore.showToast(reason, "error");
+          // 持久记录：用于让 <select> 回弹到真实模式并持续提示原因
+          appStore.setModeRejection(reason);
+          // 失败时向服务端回读真实状态，避免前端显示与服务端不一致
+          sendControlModeGet();
+        } else if (typeof data.message === "string" && data.message) {
+          appStore.showToast(data.message, "info");
+        }
+        break;
+      }
+      case "odometry_status": {
+        if (data.available === false) {
+          appStore.setOdometry(null);
+        } else if (data.pose) {
+          appStore.setOdometry(data.pose as Record<string, unknown>);
+        }
+        break;
+      }
+      case "wheel_selftest_result": {
+        appStore.setWheelSelftest((data ?? null) as Record<string, unknown> | null);
+        break;
+      }
+      case "hw_diagnostics": {
+        // 硬件诊断（来自独立诊断子服务，主服务经 WS 转发）
+        appStore.setDiagnostics((data ?? null) as Record<string, unknown> | null);
+        break;
+      }
+      case "safety_status": {
+        // S1：安全停车状态必须让用户看见（含原因），不允许静默
+        appStore.applySafetyStatus(data as Record<string, unknown>);
+        if (data.tripped && data.active) {
+          const a = data.active as Record<string, unknown>;
+          appStore.showToast(`已安全停车：${String(a.reason ?? "未指明原因")}`, "error");
+        }
+        break;
+      }
+      case "emergency_stop_ack": {
+        appStore.showToast(data.stopped ? "已急停" : "急停指令已受理（硬件未确认）", "error");
+        break;
+      }
+      case "emergency_release_ack": {
+        appStore.showToast(data.ok ? "已解除急停" : "解除失败（当前无急停）", "info");
+        break;
+      }
       case "power_policy_status": {
         robotStore.setPowerPolicy({
           mode: data.mode as "normal" | "eco",
@@ -2148,6 +2203,31 @@ export function useWebSocket() {
   function sendStreamQuality(mode: "auto" | "high" | "medium" | "low"): void {
     _send({ type: "camera_stream_quality", data: { mode } });
   }
+
+  /** 切换运行模式（S0）。semi/auto 会让机器人自行介入控制，服务端要求 confirmed=true。 */
+  function sendControlMode(mode: "manual" | "semi" | "auto", confirmed = false, reason?: string): void {
+    _send({ type: "control_mode_set", data: { mode, confirmed, reason } });
+  }
+
+  /** 查询服务端当前模式与降级状态（S0） */
+  /** 触发轮子主动自检（会短暂移动，需机器人着地） */
+  function sendWheelSelftest(duration = 1.2, speed = 0.2): void {
+    _send({ type: "wheel_selftest", data: { duration, speed } });
+  }
+
+  function sendControlModeGet(): void {
+    _send({ type: "control_mode_get", data: {} });
+  }
+
+  /** 查询一次里程计位姿（S0） */
+  function sendOdometryGet(): void {
+    _send({ type: "odometry_get", data: {} });
+  }
+
+  /** 重置里程计原点（标定/调试用，S0） */
+  function sendOdometryReset(x = 0, y = 0, theta = 0): void {
+    _send({ type: "odometry_reset", data: { x, y, theta } });
+  }
   function sendGimbal(axis: string, angle: number): void {
     _send({ type: "gimbal", data: { axis, angle } });
   }
@@ -2401,6 +2481,11 @@ export function useWebSocket() {
     sendSystemAction,
     sendExec,
     sendCamera,
+    sendControlMode,
+    sendControlModeGet,
+    sendWheelSelftest,
+    sendOdometryGet,
+    sendOdometryReset,
     requestCameraStatus,
     sendGimbal,
     sendGimbalMove,
