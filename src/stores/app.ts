@@ -40,6 +40,9 @@ export const useAppStore = defineStore("app", {
       allowAuto: false,
     },
 
+    /** 可用执行器自检项（来自 actuator_selftest_list） */
+    selftestList: [] as Array<Record<string, unknown>>,
+
     /** 轮子主动自检结果（null=未运行） */
     wheelSelftest: null as null | Record<string, unknown>,
 
@@ -156,6 +159,11 @@ export const useAppStore = defineStore("app", {
     setControlMode(mode: ControlMode) {
       this.controlMode = mode;
       this.saveSettings();
+    },
+
+    /** 更新可用自检项 */
+    setSelftestList(list: Array<Record<string, unknown>>) {
+      this.selftestList = list;
     },
 
     /** 记录轮子自检结果 */

@@ -1661,6 +1661,15 @@ export function useWebSocket() {
         }
         break;
       }
+      case "actuator_selftest_list": {
+        const list = (data?.tests ?? []) as Array<Record<string, unknown>>;
+        appStore.setSelftestList(list);
+        break;
+      }
+      case "actuator_selftest_result": {
+        appStore.setWheelSelftest((data ?? null) as Record<string, unknown> | null);
+        break;
+      }
       case "wheel_selftest_result": {
         appStore.setWheelSelftest((data ?? null) as Record<string, unknown> | null);
         break;
@@ -2210,6 +2219,16 @@ export function useWebSocket() {
   }
 
   /** 查询服务端当前模式与降级状态（S0） */
+  /** 请求可用的执行器自检项 */
+  function sendActuatorSelftestList(): void {
+    _send({ type: "actuator_selftest_list", data: {} });
+  }
+
+  /** 运行指定执行器自检（wheels / gimbal …） */
+  function sendActuatorSelftest(test: string): void {
+    _send({ type: "actuator_selftest", data: { test } });
+  }
+
   /** 触发轮子主动自检（会短暂移动，需机器人着地） */
   function sendWheelSelftest(duration = 1.2, speed = 0.2): void {
     _send({ type: "wheel_selftest", data: { duration, speed } });
@@ -2484,6 +2503,8 @@ export function useWebSocket() {
     sendControlMode,
     sendControlModeGet,
     sendWheelSelftest,
+    sendActuatorSelftest,
+    sendActuatorSelftestList,
     sendOdometryGet,
     sendOdometryReset,
     requestCameraStatus,

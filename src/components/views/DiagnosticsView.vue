@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { useAppStore } from "@/stores/app";
 import { useWebSocket } from "@/composables/useWebSocket";
 
@@ -12,7 +12,10 @@ import { useWebSocket } from "@/composables/useWebSocket";
  * 排版对齐 StatusView：分区标题 + run-card 统计卡 + 明细列表。
  */
 const appStore = useAppStore();
-const { sendWheelSelftest } = useWebSocket();
+const { sendActuatorSelftest, sendActuatorSelftestList } = useWebSocket();
+onMounted(() => {
+  sendActuatorSelftestList();
+});
 
 interface DiagCheck {
   name: string;
@@ -68,27 +71,41 @@ function statusIcon(s: string): string {
         </h3>
 
         <div class="diag-actions">
-          <button class="diag-btn" @click="sendWheelSelftest()">🔧 轮子自检（会短暂移动）</button>
-          <span class="diag-hint">用于发现"静止时看不出来"的卡滞轮子：会前进约 24cm 并对比四轮编码器增量</span>
+          <button
+            v-for="t in appStore.selftestList"
+            :key="String(t.id)"
+            class="diag-btn"
+            :disabled="!t.available"
+            :title="String(t.reason || '')"
+            @click="sendActuatorSelftest(String(t.id))"
+          >
+            🔧 {{ t.name }}自检
+            <span v-if="t.risk === 'medium'" class="diag-hint">（会移动）</span>
+            <span v-if="!t.available" class="diag-hint">（本机不支持）</span>
+          </button>
+          <span v-if="!appStore.selftestList.length" class="diag-hint">自检项加载中…</span>
         </div>
         <div v-if="appStore.wheelSelftest" class="diag-selftest">
           <p>
-            自检结果：<b :class="appStore.wheelSelftest.ok ? 'diag-ok' : 'diag-fail'">
-              {{ appStore.wheelSelftest.ok ? "全部正常" : "有轮子未转动" }}
+            {{ appStore.wheelSelftest.name || "自检" }}结果：<b
+              :class="appStore.wheelSelftest.ok ? 'diag-ok' : 'diag-fail'"
+            >
+              {{ appStore.wheelSelftest.ok ? "通过" : appStore.wheelSelftest.status === "skip" ? "跳过" : "未通过" }}
             </b>
+            <span class="diag-detail">{{ appStore.wheelSelftest.detail }}</span>
             <span v-if="(appStore.wheelSelftest.bad_wheels as string[])?.length">
               — {{ (appStore.wheelSelftest.bad_wheels as string[]).join(", ") }}
             </span>
           </p>
           <div
             v-for="r in (appStore.wheelSelftest.rows as any[]) || []"
-            :key="r.wheel"
+            :key="r.cmd"
             class="diag-row"
             :class="r.ok ? 'diag-row-ok' : 'diag-row-fail'"
           >
             <span class="diag-icon">{{ r.ok ? "✅" : "🔴" }}</span>
-            <span class="diag-name">{{ r.wheel }}</span>
-            <span class="diag-detail">Δ{{ r.delta }}</span>
+            <span class="diag-name">{{ r.cmd }}</span>
+            <span class="diag-detail">实测 {{ r.measured }}</span>
           </div>
           <p v-if="appStore.wheelSelftest.note" class="diag-hint">{{ appStore.wheelSelftest.note }}</p>
         </div>
