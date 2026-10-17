@@ -143,6 +143,31 @@ function statusIcon(s: string): string {
 </template>
 
 <style scoped>
+/* 容器样式与 StatusView 一致；这些是**该组件 scoped** 的，
+   不写就不会有滚动容器（曾因此诊断页无法上下滚动） */
+.view {
+  display: none;
+}
+.view.active {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+h2 {
+  margin-bottom: 16px;
+  font-size: 22px;
+}
+.status-detailed {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.status-section h3 {
+  margin-bottom: 12px;
+  font-size: 16px;
+}
 .diag-overall {
   margin-left: 8px;
   vertical-align: middle;
